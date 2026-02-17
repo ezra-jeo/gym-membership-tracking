@@ -39,7 +39,7 @@ export function SolutionSection() {
           {/* Left: Image */}
           <div className="relative aspect-[4/5] overflow-hidden rounded-3xl">
             <Image
-              src="/images/training-floor.jpg"
+              src="/assets/training-floor.jpg"
               alt="Athletes training on the gym floor"
               fill
               className="object-cover"

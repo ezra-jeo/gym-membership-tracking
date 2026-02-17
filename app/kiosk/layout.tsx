@@ -12,7 +12,7 @@ export default function KioskLayout({
       <header className="flex items-center justify-between border-b border-muted-foreground/20 px-6 py-4">
         <Link href="/" className="flex items-center gap-3">
           <Image
-            src="/images/logo.png"
+            src="/assets/logo.png"
             alt="Curve Rush"
             width={40}
             height={40}

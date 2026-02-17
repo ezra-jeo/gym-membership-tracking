@@ -51,7 +51,7 @@ export default function AdminLayout({
       >
         <div className="flex items-center gap-3 border-b border-muted-foreground/10 px-5 py-5">
           <Image
-            src="/images/logo.png"
+            src="/assets/logo.png"
             alt="Curve Rush"
             width={36}
             height={36}

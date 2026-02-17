@@ -7,7 +7,7 @@ export function HeroSection() {
       {/* Background Image */}
       <div className="absolute inset-0">
         <Image
-          src="/images/hero-gym.jpg"
+          src="/assets/hero-gym.jpg"
           alt="Modern gym interior with warm lighting"
           fill
           className="object-cover opacity-40"

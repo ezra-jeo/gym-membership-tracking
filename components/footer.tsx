@@ -8,7 +8,7 @@ export function Footer() {
         <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/images/logo.png"
+              src="/assets/logo.png"
               alt="Curve Rush Fitness Gym logo"
               width={36}
               height={36}

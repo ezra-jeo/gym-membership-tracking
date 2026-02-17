@@ -65,7 +65,7 @@ export function WhyUsSection() {
           {/* Right: Image */}
           <div className="relative aspect-[4/5] overflow-hidden rounded-3xl">
             <Image
-              src="/images/community.jpg"
+              src="/assets/community.avif"
               alt="Group fitness class with energetic atmosphere"
               fill
               className="object-cover"
