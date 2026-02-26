@@ -1,56 +1,145 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Syne:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
-@layer base {
-  :root {
-    --background: 0 0% 98%;
-    --foreground: 0 0% 7%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 7%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 7%;
-    --primary: 22 100% 55%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 94%;
-    --secondary-foreground: 0 0% 15%;
-    --muted: 30 10% 94%;
-    --muted-foreground: 0 0% 40%;
-    --accent: 22 100% 55%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 30 10% 88%;
-    --input: 30 10% 88%;
-    --ring: 22 100% 55%;
-    --chart-1: 22 100% 55%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* --- Stren Brand Colors --- */
+  --color-primary:        #D4956A;
+  --color-primary-light:  #E8B99A;
+  --color-primary-dark:   #B5724A;
+  --color-primary-glow:   rgba(212, 149, 106, 0.15);
+
+  /* --- Neutrals --- */
+  --color-charcoal:       #2C2C2C;
+  --color-graphite:       #3D3D3D;
+  --color-smoke:          #5A5A5A;
+  --color-gray:           #8A8A8A;
+  --color-light-gray:     #C4C4C4;
+  --color-surface:        #F2EDE8;
+  --color-background:     #FAF7F4;
+  --color-white:          #FFFFFF;
+
+  /* --- Semantic --- */
+  --color-text-primary:   #1A1A1A;
+  --color-text-secondary: #5A5A5A;
+  --color-text-muted:     #8A8A8A;
+  --color-text-inverse:   #FAF7F4;
+
+  /* --- Status Colors --- */
+  --color-success:        #4CAF7D;
+  --color-success-bg:     rgba(76, 175, 125, 0.12);
+  --color-danger:         #E05C5C;
+  --color-danger-bg:      rgba(224, 92, 92, 0.12);
+  --color-warning:        #E8A920;
+  --color-warning-bg:     rgba(232, 169, 32, 0.12);
+
+  /* --- Typography --- */
+  --font-display:         'Playfair Display', serif;
+  --font-heading:         'Syne', sans-serif;
+  --font-body:            'Inter', sans-serif;
+
+  /* --- Spacing --- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-6:  24px;
+  --space-8:  32px;
+
+  /* --- Radius --- */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   16px;
+
+  /* Tailwind compatibility */
+  --background: var(--color-background);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-white);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-white);
+  --secondary: var(--color-charcoal);
+  --secondary-foreground: var(--color-white);
+  --muted: var(--color-surface);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-primary);
+  --accent-foreground: var(--color-background);
+  --destructive: var(--color-danger);
+  --destructive-foreground: var(--color-white);
+  --border: var(--color-surface);
+  --input: var(--color-white);
+  --ring: var(--color-primary);
+  
+  /* Chart colors */
+  --chart-1: var(--color-primary);
+  --chart-2: var(--color-charcoal);
+  --chart-3: var(--color-primary-light);
+  --chart-4: var(--color-graphite);
+  --chart-5: var(--color-smoke);
+  
+  --radius: var(--radius-lg);
+  
+  /* Sidebar */
+  --sidebar: var(--color-charcoal);
+  --sidebar-foreground: var(--color-light-gray);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-white);
+  --sidebar-accent: var(--color-primary-glow);
+  --sidebar-accent-foreground: var(--color-primary);
+  --sidebar-border: var(--color-graphite);
+  --sidebar-ring: var(--color-primary);
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+.dark {
+  --background: var(--color-charcoal);
+  --foreground: var(--color-text-inverse);
+  --card: var(--color-graphite);
+  --card-foreground: var(--color-text-inverse);
+  --popover: var(--color-graphite);
+  --popover-foreground: var(--color-text-inverse);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-charcoal);
+  --secondary: var(--color-primary-light);
+  --secondary-foreground: var(--color-charcoal);
+  --muted: var(--color-smoke);
+  --muted-foreground: var(--color-light-gray);
+  --accent: var(--color-primary);
+  --accent-foreground: var(--color-charcoal);
+  --destructive: var(--color-danger);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-graphite);
+  --input: var(--color-graphite);
+  --ring: var(--color-primary);
+  --chart-1: var(--color-primary-light);
+  --chart-2: var(--color-primary);
+  --chart-3: var(--color-primary-dark);
+  --chart-4: var(--color-smoke);
+  --chart-5: var(--color-light-gray);
+  --sidebar: var(--color-charcoal);
+  --sidebar-foreground: var(--color-light-gray);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-charcoal);
+  --sidebar-accent: var(--color-primary-glow);
+  --sidebar-accent-foreground: var(--color-primary);
+  --sidebar-border: var(--color-graphite);
+  --sidebar-ring: var(--color-primary);
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
 }
