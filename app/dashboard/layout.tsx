@@ -70,7 +70,7 @@ export default function DashboardLayout({
         <div className="flex items-center gap-3 mb-8">
           <div className="h-8 w-8 relative">
             <Image
-              src="/stren-logo.svg"
+              src="/stren-logo.png"
               alt="Stren"
               fill
               className="object-contain"
@@ -151,7 +151,7 @@ export default function DashboardLayout({
           <div className="flex items-center gap-3">
             <div className="h-6 w-6 relative">
               <Image
-                src="/stren-logo.svg"
+                src="/stren-logo.png"
                 alt="Stren"
                 fill
                 className="object-contain"

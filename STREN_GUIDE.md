@@ -150,7 +150,7 @@ app/
         └── page.tsx        # Configuration
 
 public/
-└── stren-logo.svg         # Brand logo
+└── stren-logo.png         # Brand logo
 ```
 
 ## API Routes (Future)

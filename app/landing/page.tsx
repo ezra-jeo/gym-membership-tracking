@@ -20,7 +20,7 @@ export default function LandingPage() {
       >
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 relative">
-            <Image src="/stren-logo.svg" alt="Stren" fill className="object-contain" />
+            <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
           </div>
           <span 
             className="text-2xl font-bold"
@@ -69,7 +69,7 @@ export default function LandingPage() {
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           <Image
-            src="/lifetime-hero.jpg"
+            src="/landing-gym.jpg"
             alt="Hero"
             fill
             className="object-cover"
@@ -516,7 +516,7 @@ export default function LandingPage() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <div className="h-8 w-8 relative">
-                  <Image src="/stren-logo.svg" alt="Stren" fill className="object-contain" />
+                  <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
                 </div>
                 <span 
                   className="text-lg font-bold"

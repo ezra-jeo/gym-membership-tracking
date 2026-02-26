@@ -40,7 +40,7 @@ export default function LoginPage() {
           <Link href="/landing">
             <div className="h-20 w-20 relative cursor-pointer hover:opacity-80 transition-opacity">
               <Image
-                src="/stren-logo.svg"
+                src="/stren-logo.png"
                 alt="Stren Logo"
                 fill
                 className="object-contain"
