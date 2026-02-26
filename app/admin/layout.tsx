@@ -5,6 +5,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { GymProvider } from "@/lib/gym-context"
 import {
   LayoutDashboard,
   Users,
@@ -32,6 +33,7 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
+    <GymProvider>
     <div className="flex min-h-screen bg-foreground">
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -132,5 +134,6 @@ export default function AdminLayout({
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
+    </GymProvider>
   )
 }

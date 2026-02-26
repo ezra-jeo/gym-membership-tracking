@@ -1,6 +1,9 @@
+"use client"
+
 import React from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { GymProvider } from "@/lib/gym-context"
 
 export default function KioskLayout({
   children,
@@ -8,6 +11,7 @@ export default function KioskLayout({
   children: React.ReactNode
 }) {
   return (
+    <GymProvider>
     <div className="flex min-h-screen flex-col bg-foreground text-primary-foreground">
       <header className="flex items-center justify-between border-b border-muted-foreground/20 px-6 py-4">
         <Link href="/" className="flex items-center gap-3">
@@ -51,5 +55,6 @@ export default function KioskLayout({
       </header>
       <main className="flex flex-1 flex-col">{children}</main>
     </div>
+    </GymProvider>
   )
 }
