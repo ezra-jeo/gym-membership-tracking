@@ -2,12 +2,9 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { ChevronDown, ArrowRight, Users, BarChart3, Zap, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, ArrowRight, Users, BarChart3, Zap, Lock, Smartphone, CalendarDays } from 'lucide-react';
 
 export default function LandingPage() {
-  const [email, setEmail] = useState('');
-
   return (
     <div style={{ backgroundColor: 'var(--color-background)' }}>
       {/* Navigation */}
@@ -86,16 +83,16 @@ export default function LandingPage() {
             className="text-sm md:text-base font-semibold uppercase tracking-widest mb-4"
             style={{ color: 'var(--color-primary-light)' }}
           >
-            The Future of Gym Management
+            Gym Management, Simplified
           </p>
           <h1 
             className="text-5xl md:text-7xl font-bold mb-6 leading-tight text-balance"
             style={{ fontFamily: 'var(--font-heading)' }}
           >
-            Your Members First. Everything Else Second.
+            Stop Using Spreadsheets to Run Your Gym.
           </h1>
           <p className="text-lg md:text-xl mb-8 text-gray-100 max-w-xl mx-auto">
-            Stop managing with spreadsheets. Start growing your gym with Stren—the intelligent platform that makes every check-in count.
+            Stren replaces your notebooks, chat threads, and scattered receipts with one simple platform for members, payments, and check-ins.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -109,7 +106,7 @@ export default function LandingPage() {
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
               >
-                Start Free Trial
+                Get Started
               </button>
             </Link>
             <button
@@ -120,8 +117,9 @@ export default function LandingPage() {
               }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
             >
-              Watch Demo
+              See How It Works
             </button>
           </div>
         </div>
@@ -134,7 +132,7 @@ export default function LandingPage() {
         </button>
       </section>
 
-      {/* Inspiring Places Section */}
+      {/* Core Features Section */}
       <section 
         id="features"
         className="py-24 md:py-32 px-6 md:px-12"
@@ -147,19 +145,19 @@ export default function LandingPage() {
                 className="text-sm font-semibold uppercase tracking-widest mb-4"
                 style={{ color: 'var(--color-primary)' }}
               >
-                Inspiring Places
+                Core Features
               </p>
               <h2 
                 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-balance"
                 style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
               >
-                Built for the Modern Gym
+                Everything Your Gym Needs in One Place
               </h2>
               <p 
                 className="text-lg leading-relaxed mb-8"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
-                Every detail of Stren is designed with your member experience in mind. From the moment they scan a QR code to when they check their progress, every touchpoint matters.
+                QR check-ins, member profiles, payment tracking, and a real-time dashboard — no extra hardware required. Just open Stren on any device.
               </p>
 
               <div className="space-y-6">
@@ -175,10 +173,10 @@ export default function LandingPage() {
                       className="text-lg font-semibold mb-2"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      Instant Check-In
+                      QR Code Check-In
                     </h3>
                     <p style={{ color: 'var(--color-text-secondary)' }}>
-                      QR code scanning makes entry effortless. No more lines, no more friction.
+                      Members scan a QR code to check in. You see who&apos;s in the gym at a glance.
                     </p>
                   </div>
                 </div>
@@ -195,10 +193,10 @@ export default function LandingPage() {
                       className="text-lg font-semibold mb-2"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      Real-Time Insights
+                      Dashboard & Reports
                     </h3>
                     <p style={{ color: 'var(--color-text-secondary)' }}>
-                      Watch your business metrics in real-time. Attendance, revenue, member trends—all at your fingertips.
+                      See attendance, revenue, and member trends on a clean dashboard. Export reports when you need them.
                     </p>
                   </div>
                 </div>
@@ -215,10 +213,10 @@ export default function LandingPage() {
                       className="text-lg font-semibold mb-2"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      Member Engagement
+                      Member Profiles
                     </h3>
                     <p style={{ color: 'var(--color-text-secondary)' }}>
-                      Keep members engaged with personalized profiles, class bookings, and achievement tracking.
+                      Each member gets a profile with their plan, payment history, attendance log, and class enrollments.
                     </p>
                   </div>
                 </div>
@@ -235,12 +233,12 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Results-Driven Section */}
+          {/* What You Can Do Section */}
           <div className="grid md:grid-cols-2 gap-16 items-center">
             <div className="relative h-96 md:h-full min-h-96 rounded-2xl overflow-hidden order-2 md:order-1">
               <Image
                 src="/owner-success.jpg"
-                alt="Results"
+                alt="Gym owner managing operations"
                 fill
                 className="object-cover"
               />
@@ -251,19 +249,19 @@ export default function LandingPage() {
                 className="text-sm font-semibold uppercase tracking-widest mb-4"
                 style={{ color: 'var(--color-primary)' }}
               >
-                Results-Driven
+                What You Can Do
               </p>
               <h2 
                 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-balance"
                 style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
               >
-                Grow Your Business
+                Run Your Gym Like a Real Business
               </h2>
               <p 
                 className="text-lg leading-relaxed mb-8"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
-                Gym owners using Stren see immediate results: better member retention, smarter business decisions, and more time doing what you love.
+                Stren gives you the tools to stay organized so you can spend more time on what matters — your members.
               </p>
 
               <div className="space-y-4 mb-8">
@@ -273,7 +271,7 @@ export default function LandingPage() {
                     style={{ backgroundColor: 'var(--color-primary)' }}
                   />
                   <p style={{ color: 'var(--color-text-secondary)' }}>
-                    Track attendance and revenue in real-time
+                    Track attendance and payments in real-time
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -282,7 +280,7 @@ export default function LandingPage() {
                     style={{ backgroundColor: 'var(--color-primary)' }}
                   />
                   <p style={{ color: 'var(--color-text-secondary)' }}>
-                    Manage staff and member roles effortlessly
+                    Manage staff roles and member access
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -291,7 +289,16 @@ export default function LandingPage() {
                     style={{ backgroundColor: 'var(--color-primary)' }}
                   />
                   <p style={{ color: 'var(--color-text-secondary)' }}>
-                    Schedule classes and send member notifications
+                    Schedule classes and manage enrollments
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: 'var(--color-primary)' }}
+                  />
+                  <p style={{ color: 'var(--color-text-secondary)' }}>
+                    Know exactly who&apos;s paid and who&apos;s overdue
                   </p>
                 </div>
               </div>
@@ -306,7 +313,7 @@ export default function LandingPage() {
                   onMouseEnter={(e) => e.currentTarget.style.transform = 'translateX(8px)'}
                   onMouseLeave={(e) => e.currentTarget.style.transform = 'translateX(0)'}
                 >
-                  Explore Features <ArrowRight size={20} />
+                  Try It Out <ArrowRight size={20} />
                 </button>
               </Link>
             </div>
@@ -314,7 +321,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Passionate People Section */}
+      {/* Why It Works Section */}
       <section 
         id="benefits"
         className="py-24 md:py-32 px-6 md:px-12"
@@ -326,27 +333,27 @@ export default function LandingPage() {
               className="text-sm font-semibold uppercase tracking-widest mb-4"
               style={{ color: 'var(--color-primary)' }}
             >
-              Passionate Community
+              Built for Simplicity
             </p>
             <h2 
               className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
               style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
             >
-              Built for Gym Owners Who Care
+              No Complexity. No Overhead.
             </h2>
             <p 
               className="text-lg max-w-2xl mx-auto"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Join hundreds of gym owners who are transforming their business with Stren. See why they're growing faster than ever.
+              Stren is designed for independent gyms that want something better than spreadsheets — without the bloat of enterprise software.
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { icon: Lock, label: 'Secure & Reliable', desc: 'Enterprise-grade security keeps your member data safe 24/7.' },
-              { icon: Zap, label: 'Lightning Fast', desc: 'QR scanning works instantly, even with thousands of members.' },
-              { icon: Users, label: 'Easy Management', desc: 'Intuitive interface means your team learns it in minutes.' },
+              { icon: Lock, label: 'Your Data Stays Safe', desc: 'Member information is stored securely. No paper trails, no scattered screenshots.' },
+              { icon: Smartphone, label: 'Works on Any Device', desc: 'Use it on your phone, tablet, or computer. No special hardware or scanners needed.' },
+              { icon: CalendarDays, label: 'Simple to Start', desc: 'Set up your gym, add members, and start tracking — it takes minutes, not days.' },
             ].map((item, i) => (
               <div
                 key={i}
@@ -378,7 +385,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Community Moment */}
+      {/* Full-bleed Image Section */}
       <section className="relative h-96 md:h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           <Image
@@ -398,10 +405,10 @@ export default function LandingPage() {
             className="text-4xl md:text-5xl font-bold mb-4 leading-tight"
             style={{ fontFamily: 'var(--font-heading)' }}
           >
-            One Platform. Unlimited Growth.
+            Built for Independent Gyms, Not Chains.
           </h2>
           <p className="text-lg mb-8 text-gray-100">
-            From single locations to multi-location empires, Stren scales with your ambitions.
+            You don&apos;t need enterprise software. You need a tool that actually fits how you work.
           </p>
         </div>
       </section>
@@ -416,13 +423,13 @@ export default function LandingPage() {
             className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
             style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
           >
-            Ready to Transform Your Gym?
+            Ready to Try Stren?
           </h2>
           <p 
             className="text-xl mb-8"
             style={{ color: 'var(--color-text-secondary)' }}
           >
-            Join the gym owners revolutionizing their business with Stren. Start your free trial today—no credit card required.
+            We&apos;re building Stren for gym owners who are tired of managing with notebooks and chat threads. Sign in and see what it can do.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
@@ -436,24 +443,13 @@ export default function LandingPage() {
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
               >
-                Start Free Trial
+                Get Started
               </button>
             </Link>
-            <button
-              className="px-10 py-4 rounded-full font-semibold uppercase tracking-wide border-2 transition-all"
-              style={{
-                borderColor: 'var(--color-primary)',
-                color: 'var(--color-primary)',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-glow)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-            >
-              Schedule Demo
-            </button>
           </div>
 
           <div 
-            className="p-8 rounded-xl border"
+            className="p-6 rounded-xl border"
             style={{
               backgroundColor: 'var(--color-background)',
               borderColor: 'var(--color-surface)',
@@ -461,156 +457,39 @@ export default function LandingPage() {
             }}
           >
             <p 
-              className="text-sm mb-4"
+              className="text-sm"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Get expert advice tailored to your gym
+              Stren is in early development. We&apos;d love your feedback as we build this out.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <input
-                type="email"
-                placeholder="your@gym.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="flex-1 px-4 py-3 rounded-lg border focus:outline-none transition-all"
-                style={{
-                  backgroundColor: 'var(--color-white)',
-                  borderColor: 'var(--color-light-gray)',
-                  borderWidth: '1.5px',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-primary)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(212, 149, 106, 0.15)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--color-light-gray)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              />
-              <button
-                className="px-8 py-3 rounded-lg font-semibold transition-all"
-                style={{
-                  backgroundColor: 'var(--color-primary)',
-                  color: 'var(--color-white)',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-              >
-                Get Started
-              </button>
-            </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
       <footer 
-        className="border-t py-16 px-6 md:px-12"
+        className="border-t py-12 px-6 md:px-12"
         style={{
           backgroundColor: 'var(--color-charcoal)',
           borderColor: 'var(--color-graphite)',
         }}
       >
         <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="h-8 w-8 relative">
-                  <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-                </div>
-                <span 
-                  className="text-lg font-bold"
-                  style={{ color: 'var(--color-primary)' }}
-                >
-                  Stren
-                </span>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 relative">
+                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
               </div>
-              <p className="text-sm" style={{ color: 'var(--color-light-gray)' }}>
-                The modern gym management platform.
-              </p>
+              <span 
+                className="text-lg font-bold"
+                style={{ color: 'var(--color-primary)' }}
+              >
+                Stren
+              </span>
             </div>
-
-            <div>
-              <h4 className="font-semibold mb-4" style={{ color: 'var(--color-white)' }}>Product</h4>
-              <ul className="space-y-2">
-                {['Features', 'Pricing', 'Security', 'Status'].map((item) => (
-                  <li key={item}>
-                    <a 
-                      href="#" 
-                      className="text-sm transition-colors"
-                      style={{ color: 'var(--color-gray)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-gray)'}
-                    >
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold mb-4" style={{ color: 'var(--color-white)' }}>Company</h4>
-              <ul className="space-y-2">
-                {['About', 'Blog', 'Careers', 'Contact'].map((item) => (
-                  <li key={item}>
-                    <a 
-                      href="#" 
-                      className="text-sm transition-colors"
-                      style={{ color: 'var(--color-gray)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-gray)'}
-                    >
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold mb-4" style={{ color: 'var(--color-white)' }}>Legal</h4>
-              <ul className="space-y-2">
-                {['Privacy', 'Terms', 'Security', 'Compliance'].map((item) => (
-                  <li key={item}>
-                    <a 
-                      href="#" 
-                      className="text-sm transition-colors"
-                      style={{ color: 'var(--color-gray)' }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
-                      onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-gray)'}
-                    >
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div 
-            className="border-t pt-8"
-            style={{ borderColor: 'var(--color-graphite)' }}
-          >
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <p className="text-sm" style={{ color: 'var(--color-gray)' }}>
-                © 2024 Stren. All rights reserved.
-              </p>
-              <div className="flex gap-6">
-                {['Twitter', 'LinkedIn', 'Instagram'].map((social) => (
-                  <a
-                    key={social}
-                    href="#"
-                    className="text-sm transition-colors"
-                    style={{ color: 'var(--color-gray)' }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-primary)'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-gray)'}
-                  >
-                    {social}
-                  </a>
-                ))}
-              </div>
-            </div>
+            <p className="text-sm" style={{ color: 'var(--color-gray)' }}>
+              © 2026 Stren. A gym management platform in the making.
+            </p>
           </div>
         </div>
       </footer>

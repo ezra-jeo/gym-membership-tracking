@@ -162,7 +162,7 @@ export default function CheckinPage() {
                       playsInline
                       className="w-full h-full object-cover"
                     />
-                  )}
+                  )} 
                 </div>
                 <div className="flex gap-2">
                   {!isCameraActive ? (

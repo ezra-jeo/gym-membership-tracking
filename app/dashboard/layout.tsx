@@ -76,7 +76,7 @@ export default function DashboardLayout({
               className="object-contain"
             />
           </div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--color-primary)' }}>Stren</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-heading)'}}>Stren</h1>
         </div>
 
         {/* Navigation */}
@@ -157,7 +157,7 @@ export default function DashboardLayout({
                 className="object-contain"
               />
             </div>
-            <h1 className="text-lg font-bold">Stren</h1>
+            <h1 className="text-lg font-bold" style={{fontFamily: 'var(--font-heading)'}}>Stren</h1>
           </div>
           <Button
             variant="ghost"
