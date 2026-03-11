@@ -140,10 +140,8 @@ async function postCheckInFeedItem(memberId: string, gymId: string | null) {
     member_id: memberId,
     gym_id: gymId,
     type: "check_in",
-    content: {
-      title: `${profile?.name ?? "Someone"} checked in`,
-      description: `${timeOfDay} workout${streakText}`,
-    },
+    title: `${profile?.name ?? "Someone"} checked in`,
+    description: `${timeOfDay} workout${streakText}`,
   })
 }
 
@@ -159,13 +157,9 @@ async function postBadgeFeedItem(memberId: string, gymId: string | null, badge: 
     member_id: memberId,
     gym_id: gymId,
     type: "badge",
-    content: {
-      title: `${profile?.name ?? "Someone"} earned ${badge.icon} ${badge.name}!`,
-      description: badge.description,
-      badge_id: badge.id,
-      badge_name: badge.name,
-      badge_icon: badge.icon,
-    },
+    title: `${profile?.name ?? "Someone"} earned ${badge.icon} ${badge.name}!`,
+    description: badge.description,
+    metadata: { badge_id: badge.id, badge_name: badge.name, badge_icon: badge.icon },
   })
 }
 
@@ -185,11 +179,9 @@ async function postStreakMilestoneFeedItem(
     member_id: memberId,
     gym_id: gymId,
     type: "streak_milestone",
-    content: {
-      title: `${profile?.name ?? "Someone"} hit a ${streak}-day streak! 🔥`,
-      description: `${streak} consecutive days at the gym`,
-      streak_count: streak,
-    },
+    title: `${profile?.name ?? "Someone"} hit a ${streak}-day streak! 🔥`,
+    description: `${streak} consecutive days at the gym`,
+    metadata: { streak_count: streak },
   })
 }
 
