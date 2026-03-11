@@ -32,10 +32,14 @@ export async function middleware(request: NextRequest) {
       const redirectTo = demoRole === "member" ? "/member" : "/admin"
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
-    if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
+    if (pathname.startsWith("/admin")) {
       if (demoRole === "member") {
         return NextResponse.redirect(new URL("/member", request.url))
       }
+    }
+    // Redirect stale /dashboard URLs to /admin
+    if (pathname.startsWith("/dashboard")) {
+      return NextResponse.redirect(new URL("/admin", request.url))
     }
     return supabaseResponse
   }
@@ -90,11 +94,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  // Admin/dashboard routes — only admin/staff/owner
-  if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
+  // Admin routes — only admin/staff/owner
+  if (pathname.startsWith("/admin")) {
     if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
       return NextResponse.redirect(new URL("/member", request.url))
     }
+  }
+
+  // Redirect stale /dashboard URLs to /admin
+  if (pathname.startsWith("/dashboard")) {
+    return NextResponse.redirect(new URL("/admin", request.url))
   }
 
   return supabaseResponse
