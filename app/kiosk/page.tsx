@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import type { Html5Qrcode as Html5QrcodeType } from "html5-qrcode"
 import {
   LogIn,
   LogOut,
@@ -16,10 +17,13 @@ import {
   Calendar,
   Clock,
   Camera,
-  CameraOff,
   Flame,
   Award,
+  Loader2,
+  AlertCircle,
 } from "lucide-react"
+
+const SCANNER_ELEMENT_ID = "kiosk-qr-reader"
 
 type KioskMode = "qr" | "search"
 
@@ -47,10 +51,9 @@ export default function KioskPage() {
   const [searched, setSearched] = useState(false)
   const [checkedIn, setCheckedIn] = useState<CheckedInEntry[]>([])
   const [scanResult, setScanResult] = useState<(CheckInResult & { memberName: string }) | null>(null)
-  const [scannerActive, setScannerActive] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const scannerLoopRef = useRef<number | null>(null)
+  const [scanStatus, setScanStatus] = useState<"initializing" | "scanning" | "processing" | "error">("initializing")
+  const scannerRef = useRef<Html5QrcodeType | null>(null)
+  const isProcessingRef = useRef(false)
 
   useEffect(() => {
     loadCheckedIn()
@@ -82,76 +85,79 @@ export default function KioskPage() {
   }
 
   const startScanner = useCallback(async () => {
+    setScanStatus("initializing")
+    console.log("[Kiosk] Initializing QR scanner...")
+
+    // Clean up any existing scanner
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop()
+      } catch { /* already stopped */ }
+      scannerRef.current = null
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setScannerActive(true)
-      startBarcodeLoop()
-    } catch {
+      const { Html5Qrcode } = await import("html5-qrcode")
+      const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, { verbose: false })
+      scannerRef.current = scanner
+
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
+        async (decodedText) => {
+          if (isProcessingRef.current) return
+          isProcessingRef.current = true
+          setScanStatus("processing")
+          console.log("[Kiosk] QR scanned:", decodedText)
+
+          try {
+            await handleQrScan(decodedText)
+          } finally {
+            // 3-second cooldown to prevent duplicate scans
+            setTimeout(() => {
+              isProcessingRef.current = false
+              setScanStatus("scanning")
+            }, 3000)
+          }
+        },
+        () => { /* ignore non-QR frames */ }
+      )
+
+      setScanStatus("scanning")
+      console.log("[Kiosk] Scanner active — waiting for QR codes")
+    } catch (err) {
+      console.error("[Kiosk] Scanner failed to start:", err)
+      setScanStatus("error")
       toast.error("Could not access camera. Use manual search instead.")
-      setMode("search")
     }
   }, [])
 
-  function startBarcodeLoop() {
-    if (!("BarcodeDetector" in window)) return
-
-    const detector = new (
-      window as unknown as {
-        BarcodeDetector: new (opts: { formats: string[] }) => {
-          detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>
-        }
-      }
-    ).BarcodeDetector({ formats: ["qr_code"] })
-
-    const loop = async () => {
-      if (!videoRef.current || videoRef.current.readyState !== 4) {
-        scannerLoopRef.current = requestAnimationFrame(loop)
-        return
-      }
+  async function stopScanner() {
+    if (scannerRef.current) {
       try {
-        const barcodes = await detector.detect(videoRef.current)
-        if (barcodes.length > 0) {
-          const qrValue = barcodes[0].rawValue
-          await handleQrScan(qrValue)
-          await new Promise((r) => setTimeout(r, 3000))
-        }
-      } catch {
-        // Detection error — continue
-      }
-      scannerLoopRef.current = requestAnimationFrame(loop)
+        await scannerRef.current.stop()
+        console.log("[Kiosk] Scanner stopped")
+      } catch { /* already stopped */ }
+      scannerRef.current = null
     }
-    scannerLoopRef.current = requestAnimationFrame(loop)
-  }
-
-  function stopScanner() {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-    }
-    if (scannerLoopRef.current) {
-      cancelAnimationFrame(scannerLoopRef.current)
-      scannerLoopRef.current = null
-    }
-    setScannerActive(false)
   }
 
   useEffect(() => {
     if (mode === "qr") {
-      startScanner()
+      // Small delay so the container div is rendered before html5-qrcode attaches
+      const timer = setTimeout(() => startScanner(), 100)
+      return () => {
+        clearTimeout(timer)
+        stopScanner()
+      }
     } else {
       stopScanner()
     }
-    return () => stopScanner()
+    return () => { stopScanner() }
   }, [mode, startScanner])
 
   async function handleQrScan(qrCode: string) {
+    console.log("[Kiosk] Processing QR:", qrCode)
     const supabase = createClient()
 
     let memberId: string | null = null
@@ -171,6 +177,7 @@ export default function KioskPage() {
     }
 
     if (!memberId) {
+      console.warn("[Kiosk] Unknown QR code:", qrCode)
       toast.error("Unknown QR code.")
       return
     }
@@ -186,9 +193,9 @@ export default function KioskPage() {
       return
     }
 
-    // Allow pending + active — only block suspended/banned
-    if (memberProfile.status === "suspended" || memberProfile.status === "banned") {
-      toast.error(`Cannot check in — account is ${memberProfile.status}.`)
+    // Allow pending + active — only block rejected
+    if (memberProfile.status === "rejected") {
+      toast.error("Cannot check in — account has been rejected.")
       return
     }
 
@@ -376,46 +383,42 @@ export default function KioskPage() {
             Hold your QR code up to the camera
           </p>
           <div
-            className="relative aspect-square max-w-sm mx-auto rounded-2xl overflow-hidden border-2"
+            className="relative max-w-sm mx-auto rounded-2xl overflow-hidden border-2"
             style={{ borderColor: "var(--color-primary)" }}
           >
-            <video
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-cover"
-              playsInline
-              muted
-            />
-            {!scannerActive && (
-              <div
-                className="absolute inset-0 flex flex-col items-center justify-center"
-                style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-              >
-                <CameraOff size={48} style={{ color: "rgba(255,255,255,0.5)" }} />
-                <p className="mt-3 text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>
-                  Camera not available
-                </p>
-                <Button onClick={startScanner} className="mt-4" size="sm">
-                  Retry Camera
-                </Button>
-              </div>
-            )}
-            {/* Corner guides */}
-            <div className="absolute inset-0 pointer-events-none">
-              {[
-                "top-4 left-4 border-t-4 border-l-4 rounded-tl-lg",
-                "top-4 right-4 border-t-4 border-r-4 rounded-tr-lg",
-                "bottom-4 left-4 border-b-4 border-l-4 rounded-bl-lg",
-                "bottom-4 right-4 border-b-4 border-r-4 rounded-br-lg",
-              ].map((cls) => (
-                <div
-                  key={cls}
-                  className={`absolute w-12 h-12 ${cls}`}
-                  style={{ borderColor: "var(--color-primary)" }}
-                />
-              ))}
-            </div>
+            <div id={SCANNER_ELEMENT_ID} className="w-full" />
           </div>
-          <p className="mt-4 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+          {/* Scan status indicator */}
+          <div className="mt-4 flex items-center justify-center gap-2 text-sm">
+            {scanStatus === "initializing" && (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--color-primary)" }} />
+                <span style={{ color: "rgba(255,255,255,0.6)" }}>Initializing camera...</span>
+              </>
+            )}
+            {scanStatus === "scanning" && (
+              <>
+                <Camera className="h-4 w-4" style={{ color: "var(--color-primary)" }} />
+                <span style={{ color: "rgba(255,255,255,0.6)" }}>Scanning... point camera at QR code</span>
+              </>
+            )}
+            {scanStatus === "processing" && (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#48bb78" }} />
+                <span style={{ color: "#48bb78" }}>QR detected! Processing...</span>
+              </>
+            )}
+            {scanStatus === "error" && (
+              <>
+                <AlertCircle className="h-4 w-4" style={{ color: "#fc8181" }} />
+                <span style={{ color: "#fc8181" }}>Camera unavailable</span>
+                <Button onClick={startScanner} size="sm" variant="outline" className="ml-2">
+                  Retry
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="mt-3 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
             No QR code?{" "}
             <button
               onClick={() => setMode("search")}
