@@ -1,17 +1,9 @@
 "use client"
 
-import React, { useMemo } from "react"
-import { useGym } from "@/lib/gym-context"
+import React, { useMemo, useState, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   BarChart,
   Bar,
@@ -26,65 +18,87 @@ import {
 import {
   CalendarDays,
   Users,
-  TrendingUp,
   DollarSign,
   ArrowUp,
-  ArrowDown,
 } from "lucide-react"
 
 export default function ReportsPage() {
-  const {
-    members,
-    payments,
-    checkIns,
-    getActiveCount,
-    getExpiredCount,
-    getMonthRevenue,
-    getAttendanceByDay,
-    getRevenueByDay,
-  } = useGym()
+  const supabase = createClient()
 
-  const activeCount = getActiveCount()
-  const expiredCount = getExpiredCount()
-  const monthRevenue = getMonthRevenue()
+  const [activeCount, setActiveCount] = useState(0)
+  const [expiredCount, setExpiredCount] = useState(0)
+  const [monthRevenue, setMonthRevenue] = useState(0)
+  const [attendanceData, setAttendanceData] = useState<{ date: string; visits: number }[]>([])
+  const [revenueData, setRevenueData] = useState<{ date: string; revenue: number }[]>([])
+  const [peakHours, setPeakHours] = useState<{ hour: number; label: string; count: number }[]>([])
+  const [revenueByDayOfMonth, setRevenueByDayOfMonth] = useState<{ day: number; amount: number }[]>([])
+  const [methodBreakdown, setMethodBreakdown] = useState({ cashTotal: 0, cashCount: 0, gcashTotal: 0, gcashCount: 0 })
+  const [avgDailyVisits, setAvgDailyVisits] = useState("0")
 
-  const attendanceData = getAttendanceByDay(14).map((d) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-    visits: d.count,
-  }))
+  const fetchData = useCallback(async () => {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      .toISOString()
+      .split("T")[0]
 
-  const revenueData = getRevenueByDay(14).map((d) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    }),
-    revenue: d.amount,
-  }))
+    // Membership counts
+    const { data: mships } = await supabase.from("memberships").select("status")
+    const statuses = mships ?? []
+    setActiveCount(statuses.filter((m) => m.status === "active").length)
+    setExpiredCount(statuses.filter((m) => m.status === "expired").length)
 
-  // Revenue by day of month (best days)
-  const revenueByDayOfMonth = useMemo(() => {
-    const dayMap: Record<number, number> = {}
-    for (const p of payments) {
-      const day = new Date(p.date).getDate()
-      dayMap[day] = (dayMap[day] || 0) + p.amount
+    // Month revenue
+    const { data: monthPayments } = await supabase
+      .from("memberships")
+      .select("amount_paid, created_at")
+      .gte("created_at", monthStart + "T00:00:00")
+    setMonthRevenue((monthPayments ?? []).reduce((sum, p) => sum + p.amount_paid, 0))
+
+    // Attendance last 14 days
+    const attData: { date: string; visits: number }[] = []
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const ds = d.toISOString().split("T")[0]
+      const { count } = await supabase
+        .from("attendance")
+        .select("id", { count: "exact", head: true })
+        .gte("check_in", ds + "T00:00:00")
+        .lt("check_in", ds + "T23:59:59.999")
+      attData.push({
+        date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        visits: count ?? 0,
+      })
     }
-    return Object.entries(dayMap)
-      .map(([day, amount]) => ({ day: Number(day), amount }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 5)
-  }, [payments])
+    setAttendanceData(attData)
+    const totalVisits = attData.reduce((s, d) => s + d.visits, 0)
+    setAvgDailyVisits((totalVisits / attData.length).toFixed(1))
 
-  // Peak hours (from check-ins)
-  const peakHours = useMemo(() => {
+    // Revenue last 14 days
+    const revData: { date: string; revenue: number }[] = []
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const ds = d.toISOString().split("T")[0]
+      const { data: dayPayments } = await supabase
+        .from("memberships")
+        .select("amount_paid")
+        .gte("created_at", ds + "T00:00:00")
+        .lt("created_at", ds + "T23:59:59.999")
+      revData.push({
+        date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        revenue: (dayPayments ?? []).reduce((sum, p) => sum + p.amount_paid, 0),
+      })
+    }
+    setRevenueData(revData)
+
+    // Peak hours
+    const { data: allAttendance } = await supabase.from("attendance").select("check_in")
     const hourMap: Record<number, number> = {}
-    for (const c of checkIns) {
-      const hour = new Date(c.checkInTime).getHours()
+    for (const c of allAttendance ?? []) {
+      const hour = new Date(c.check_in).getHours()
       hourMap[hour] = (hourMap[hour] || 0) + 1
     }
-    return Object.entries(hourMap)
+    const sortedHours = Object.entries(hourMap)
       .map(([hour, count]) => ({
         hour: Number(hour),
         label: `${Number(hour) % 12 || 12}${Number(hour) < 12 ? "AM" : "PM"}`,
@@ -92,26 +106,40 @@ export default function ReportsPage() {
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 6)
-  }, [checkIns])
+    setPeakHours(sortedHours)
 
-  // Payment method breakdown
-  const methodBreakdown = useMemo(() => {
-    const cash = payments.filter((p) => p.method === "cash")
-    const gcash = payments.filter((p) => p.method === "gcash")
-    return {
-      cashTotal: cash.reduce((s, p) => s + p.amount, 0),
-      cashCount: cash.length,
-      gcashTotal: gcash.reduce((s, p) => s + p.amount, 0),
-      gcashCount: gcash.length,
+    // Revenue by day of month
+    const { data: allPayments } = await supabase.from("memberships").select("amount_paid, created_at")
+    const dayMap: Record<number, number> = {}
+    for (const p of allPayments ?? []) {
+      const day = new Date(p.created_at).getDate()
+      dayMap[day] = (dayMap[day] || 0) + p.amount_paid
     }
-  }, [payments])
+    const sortedDays = Object.entries(dayMap)
+      .map(([day, amount]) => ({ day: Number(day), amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5)
+    setRevenueByDayOfMonth(sortedDays)
 
-  // Average daily visits
-  const avgDailyVisits = useMemo(() => {
-    const data = getAttendanceByDay(14)
-    const total = data.reduce((s, d) => s + d.count, 0)
-    return (total / data.length).toFixed(1)
-  }, [getAttendanceByDay])
+    // Payment method breakdown
+    const cash = (allPayments ?? []).filter((p) => (p as { payment_method?: string }).payment_method === "cash")
+    const gcash = (allPayments ?? []).filter((p) => (p as { payment_method?: string }).payment_method === "gcash")
+    // Need to re-fetch with payment_method
+    const { data: allMships } = await supabase.from("memberships").select("amount_paid, payment_method")
+    const cashMships = (allMships ?? []).filter((m) => m.payment_method === "cash")
+    const gcashMships = (allMships ?? []).filter((m) => m.payment_method === "gcash")
+    setMethodBreakdown({
+      cashTotal: cashMships.reduce((s, m) => s + m.amount_paid, 0),
+      cashCount: cashMships.length,
+      gcashTotal: gcashMships.reduce((s, m) => s + m.amount_paid, 0),
+      gcashCount: gcashMships.length,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   return (
     <div className="space-y-6">

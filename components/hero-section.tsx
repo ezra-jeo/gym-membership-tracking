@@ -13,7 +13,7 @@ export function HeroSection() {
           className="object-cover opacity-40"
           priority
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0D0D0D]/60 via-transparent to-[#0D0D0D]" />
+        <div className="absolute inset-0 bg-linear-to-b from-[#0D0D0D]/60 via-transparent to-[#0D0D0D]" />
       </div>
 
       {/* Content */}
@@ -25,7 +25,7 @@ export function HeroSection() {
           <h1 className="font-display text-5xl font-extrabold leading-[1.05] tracking-tight text-[#FAFAFA] md:text-7xl lg:text-8xl">
             <span className="text-balance">
               Discover what{"'"}s possible at{" "}
-              <span className="text-[#FF6B1A]">Curve Rush</span>
+              <span className="text-[#D4956A]">Stren</span>
             </span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-[#FAFAFA]/70 md:text-xl">

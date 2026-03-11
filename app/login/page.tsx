@@ -4,9 +4,25 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth-context';
+import { createClient } from '@/lib/supabase';
+import { Shield, User } from 'lucide-react';
+
+function getRoleHome(role: string): string {
+  switch (role) {
+    case 'owner':
+    case 'admin':
+    case 'staff':
+      return '/admin';
+    case 'member':
+    default:
+      return '/member';
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
+  const { signIn, demoSignIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,20 +33,56 @@ export default function LoginPage() {
     setError('');
     setIsLoading(true);
 
-    // Mock authentication - accept any email/password
-    if (email && password) {
-      // Store mock session
-      localStorage.setItem('session', JSON.stringify({ email, role: 'admin' }));
-      router.push('/dashboard');
-    } else {
+    if (!email || !password) {
       setError('Please enter email and password');
+      setIsLoading(false);
+      return;
     }
 
+    const { error: authError } = await signIn(email, password);
+
+    if (authError) {
+      setError(authError);
+      setIsLoading(false);
+      return;
+    }
+
+    // Fetch profile to determine where to send the user
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, status')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.status === 'pending') {
+        setError('Your account is awaiting gym approval.');
+        await supabase.auth.signOut();
+        setIsLoading(false);
+        return;
+      }
+      if (profile?.status === 'rejected') {
+        setError('Your membership request was not approved. Contact the gym for details.');
+        await supabase.auth.signOut();
+        setIsLoading(false);
+        return;
+      }
+
+      // ✅ Fixed: owners/admins/staff go to /admin, members go to /member
+      router.push(getRoleHome(profile?.role ?? 'member'));
+      router.refresh();
+      return;
+    }
+
+    router.refresh();
     setIsLoading(false);
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center p-4"
       style={{ backgroundColor: 'var(--color-background)' }}
     >
@@ -49,7 +101,7 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <div 
+        <div
           className="p-8 rounded-lg border shadow-md"
           style={{
             backgroundColor: 'var(--color-white)',
@@ -58,7 +110,7 @@ export default function LoginPage() {
           }}
         >
           <div className="mb-8">
-            <h1 
+            <h1
               className="text-4xl font-bold mb-2"
               style={{
                 color: 'var(--color-text-primary)',
@@ -68,17 +120,17 @@ export default function LoginPage() {
             >
               Stren
             </h1>
-            <p 
+            <p
               className="text-lg"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Gym Management Platform
+              Gym Engagement Platform
             </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-3">
-              <label 
+              <label
                 htmlFor="email"
                 className="text-xs font-semibold uppercase tracking-widest"
                 style={{ color: 'var(--color-text-secondary)' }}
@@ -88,7 +140,7 @@ export default function LoginPage() {
               <input
                 id="email"
                 type="email"
-                placeholder="demo@stren.com"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={isLoading}
@@ -111,7 +163,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-3">
-              <label 
+              <label
                 htmlFor="password"
                 className="text-xs font-semibold uppercase tracking-widest"
                 style={{ color: 'var(--color-text-secondary)' }}
@@ -144,7 +196,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p 
+              <p
                 className="text-sm font-medium"
                 style={{ color: 'var(--color-danger)' }}
               >
@@ -172,34 +224,55 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--color-surface)' }}>
-            <p 
-              className="text-center text-xs mb-4 font-medium"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              Demo credentials (any email/password works)
-            </p>
-            <div 
-              className="space-y-2 text-sm p-3 rounded-md"
-              style={{
-                backgroundColor: 'var(--color-background)',
-                borderLeft: '3px solid var(--color-primary)',
-              }}
-            >
-              <p style={{ color: 'var(--color-text-secondary)' }}>
-                <strong>Admin:</strong> admin@stren.com / password
-              </p>
-              <p style={{ color: 'var(--color-text-secondary)' }}>
-                <strong>Staff:</strong> staff@stren.com / password
-              </p>
+          {/* Demo access — dev only */}
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="mt-6">
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t" style={{ borderColor: 'var(--color-light-gray)' }} />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="px-2" style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-text-muted)' }}>
+                    DEMO ACCESS
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    demoSignIn('admin');
+                    router.push('/admin');
+                    router.refresh();
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
+                  style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+                >
+                  <Shield size={14} />
+                  Demo Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    demoSignIn('member');
+                    router.push('/member');
+                    router.refresh();
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
+                  style={{ borderColor: 'var(--color-text-secondary)', color: 'var(--color-text-secondary)' }}
+                >
+                  <User size={14} />
+                  Demo Member
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="mt-8 text-center">
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              New to Stren?{' '}
-              <Link 
-                href="/landing"
+              Don&apos;t have an account?{' '}
+              <Link
+                href="/signup"
                 className="font-semibold transition-colors"
                 style={{ color: 'var(--color-primary)' }}
                 onMouseEnter={(e) => {
@@ -209,17 +282,17 @@ export default function LoginPage() {
                   e.currentTarget.style.opacity = '1';
                 }}
               >
-                Learn more
+                Sign up
               </Link>
             </p>
           </div>
         </div>
 
-        <p 
+        <p
           className="text-center text-xs mt-6"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Stren © 2025. All rights reserved.
+          Stren © 2026. All rights reserved.
         </p>
       </div>
     </div>

@@ -266,7 +266,7 @@ export default function MembersPage() {
                 <p className="text-xs text-muted-foreground">
                   Last: {new Date(member.lastCheckin).toLocaleDateString()}
                 </p>
-                <Link href={`/dashboard/members/${member.id}`}>
+                <Link href={`/admin/members/${member.id}`}>
                   <Button variant="outline" size="sm" className="mt-2">
                     View Details
                   </Button>

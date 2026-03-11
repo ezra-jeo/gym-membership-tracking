@@ -2,59 +2,67 @@
 
 import React from "react"
 import Link from "next/link"
-import Image from "next/image"
-import { GymProvider } from "@/lib/gym-context"
+import { usePathname } from "next/navigation"
+import { QrCode, RefreshCw, Shield } from "lucide-react"
 
-export default function KioskLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+const NAV = [
+  { href: "/kiosk",       label: "Check In / Out", icon: QrCode },
+  { href: "/kiosk/renew", label: "Renew",           icon: RefreshCw },
+]
+
+export default function KioskLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+
   return (
-    <GymProvider>
-    <div className="flex min-h-screen flex-col bg-foreground text-primary-foreground">
-      <header className="flex items-center justify-between border-b border-muted-foreground/20 px-6 py-4">
-        <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/assets/logo.png"
-            alt="Curve Rush"
-            width={40}
-            height={40}
-            className="rounded-full"
-          />
-          <span className="font-display text-lg font-bold tracking-tight">
-            Curve Rush
+    <div className="flex min-h-screen flex-col" style={{ backgroundColor: "var(--color-charcoal)", color: "var(--color-white)" }}>
+      <header
+        className="flex items-center justify-between px-6 py-4 border-b"
+        style={{ borderColor: "rgba(255,255,255,0.1)" }}
+      >
+        <Link href="/kiosk" className="flex items-center gap-3">
+          <div
+            className="h-10 w-10 rounded-full flex items-center justify-center text-lg font-bold"
+            style={{ backgroundColor: "var(--color-primary)", color: "var(--color-white)" }}
+          >
+            S
+          </div>
+          <span className="text-lg font-bold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
+            Stren
           </span>
         </Link>
-        <nav className="flex items-center gap-4">
-          <Link
-            href="/kiosk"
-            className="rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-primary/20 hover:text-primary"
-          >
-            Check In / Out
-          </Link>
-          <Link
-            href="/kiosk/signup"
-            className="rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-primary/20 hover:text-primary"
-          >
-            New Member
-          </Link>
-          <Link
-            href="/kiosk/renew"
-            className="rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-primary/20 hover:text-primary"
-          >
-            Renew
-          </Link>
+        <nav className="flex items-center gap-2">
+          {NAV.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+                style={{
+                  backgroundColor: isActive ? "rgba(212,149,106,0.2)" : "transparent",
+                  color: isActive ? "var(--color-primary)" : "rgba(255,255,255,0.7)",
+                }}
+              >
+                <Icon size={16} />
+                {item.label}
+              </Link>
+            )
+          })}
           <Link
             href="/admin"
-            className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+            className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ml-2"
+            style={{
+              borderColor: "rgba(212,149,106,0.4)",
+              color: "var(--color-primary)",
+            }}
           >
+            <Shield size={16} />
             Admin
           </Link>
         </nav>
       </header>
       <main className="flex flex-1 flex-col">{children}</main>
     </div>
-    </GymProvider>
   )
 }

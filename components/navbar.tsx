@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Image from "next/image"
 import Link from "next/link"
 import { Menu, X } from "lucide-react"
 
@@ -25,15 +24,11 @@ export function Navbar() {
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/assets/logo.png"
-            alt="Curve Rush Fitness Gym logo"
-            width={48}
-            height={48}
-            className="rounded-full"
-          />
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#D4956A]">
+            <span className="text-sm font-bold text-white">S</span>
+          </div>
           <span className="font-display text-lg font-bold tracking-tight text-[#FAFAFA]">
-            Curve Rush
+            Stren
           </span>
         </Link>
 

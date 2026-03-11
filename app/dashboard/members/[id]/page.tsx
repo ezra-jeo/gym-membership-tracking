@@ -53,7 +53,7 @@ export default function MemberDetailPage() {
   return (
     <div className="space-y-6">
       {/* Back Button */}
-      <Link href="/dashboard/members">
+      <Link href="/admin/members">
         <Button variant="ghost" className="gap-2">
           <ArrowLeft size={20} />
           Back to Members

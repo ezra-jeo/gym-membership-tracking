@@ -1,44 +1,125 @@
 "use client"
 
-import React, { useState } from "react"
-import { useGym } from "@/lib/gym-context"
+import React, { useState, useEffect } from "react"
+import { createClient } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
-import type { MembershipPlanId, PaymentMethod } from "@/lib/types"
-import type { Member } from "@/lib/types"
 import { Search, RefreshCw, CheckCircle2, User } from "lucide-react"
 
-export default function RenewPage() {
-  const { members, plans, renewMember } = useGym()
-  const [query, setQuery] = useState("")
-  const [results, setResults] = useState<Member[]>([])
-  const [searched, setSearched] = useState(false)
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
-  const [planId, setPlanId] = useState<MembershipPlanId>("monthly")
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash")
-  const [success, setSuccess] = useState(false)
+interface PlanOption {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+}
 
-  function handleSearch() {
+interface MemberResult {
+  profile_id: string
+  name: string
+  contact_number: string | null
+  status: "active" | "expired" | "frozen"
+  end_date: string
+  plan_name: string
+}
+
+export default function RenewPage() {
+  const supabase = createClient()
+  const [plans, setPlans] = useState<PlanOption[]>([])
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<MemberResult[]>([])
+  const [searched, setSearched] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<MemberResult | null>(null)
+  const [planId, setPlanId] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "gcash">("cash")
+  const [success, setSuccess] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    async function loadPlans() {
+      const { data } = await supabase
+        .from("membership_plans")
+        .select("id, name, price, duration_days")
+        .order("price")
+      if (data && data.length > 0) {
+        setPlans(data)
+        setPlanId(data[0].id)
+      }
+    }
+    loadPlans()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleSearch() {
     const q = query.trim().toLowerCase()
     if (!q) return
-    const found = members.filter(
-      (m) =>
-        (m.status === "expired" || m.status === "frozen" || m.status === "active") &&
-        (m.name.toLowerCase().includes(q) || m.contactNumber.includes(q))
-    )
-    setResults(found)
+
+    const { data } = await supabase
+      .from("memberships")
+      .select("member_id, status, end_date, profiles!memberships_member_id_fkey(name, contact_number), membership_plans!memberships_plan_id_fkey(name)")
+      .order("created_at", { ascending: false })
+
+    const matched = (data ?? [])
+      .map((m) => ({
+        profile_id: m.member_id,
+        name: (m.profiles as unknown as { name: string })?.name ?? "Unknown",
+        contact_number: (m.profiles as unknown as { contact_number: string | null })?.contact_number,
+        status: m.status,
+        end_date: m.end_date,
+        plan_name: (m.membership_plans as unknown as { name: string })?.name ?? "Unknown",
+      }))
+      .filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          (m.contact_number && m.contact_number.includes(q))
+      )
+
+    setResults(matched)
     setSearched(true)
   }
 
-  function handleRenew() {
+  async function handleRenew() {
     if (!selectedMember) return
-    renewMember(selectedMember.id, planId, paymentMethod)
+    const plan = plans.find((p) => p.id === planId)
+    if (!plan) return
+
+    setLoading(true)
+
+    const startDate = new Date()
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + plan.duration_days)
+
+    // Create new membership record
+    const { error } = await supabase.from("memberships").insert({
+      member_id: selectedMember.profile_id,
+      plan_id: planId,
+      start_date: startDate.toISOString().split("T")[0],
+      end_date: endDate.toISOString().split("T")[0],
+      status: "active",
+      payment_method: paymentMethod,
+      amount_paid: plan.price,
+    })
+
+    if (error) {
+      toast.error("Failed to renew: " + error.message)
+      setLoading(false)
+      return
+    }
+
+    // Update old memberships to expired (if any active ones exist)
+    await supabase
+      .from("memberships")
+      .update({ status: "expired" })
+      .eq("member_id", selectedMember.profile_id)
+      .eq("status", "active")
+      .neq("start_date", startDate.toISOString().split("T")[0])
+
     toast.success(selectedMember.name + " renewed successfully!")
     setSuccess(true)
+    setLoading(false)
   }
 
   function handleReset() {
@@ -46,7 +127,7 @@ export default function RenewPage() {
     setResults([])
     setSearched(false)
     setSelectedMember(null)
-    setPlanId("monthly")
+    setPlanId(plans[0]?.id ?? "")
     setPaymentMethod("cash")
     setSuccess(false)
   }
@@ -90,7 +171,6 @@ export default function RenewPage() {
   }
 
   if (selectedMember) {
-    const plan = plans.find((p) => p.id === selectedMember.membershipPlanId)
     return (
       <div className="flex flex-1 flex-col items-center px-6 py-12">
         <div className="w-full max-w-md">
@@ -117,8 +197,8 @@ export default function RenewPage() {
               </Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {selectedMember.contactNumber} | Previous plan: {plan?.name} |
-              Expired: {selectedMember.endDate}
+              {selectedMember.contact_number ?? "N/A"} | Previous plan: {selectedMember.plan_name} |
+              Expired: {selectedMember.end_date}
             </p>
           </div>
 
@@ -129,7 +209,7 @@ export default function RenewPage() {
               </Label>
               <RadioGroup
                 value={planId}
-                onValueChange={(v) => setPlanId(v as MembershipPlanId)}
+                onValueChange={(v) => setPlanId(v)}
                 className="grid grid-cols-3 gap-3"
               >
                 {plans.map((p) => (
@@ -147,9 +227,9 @@ export default function RenewPage() {
                       {"P" + p.price.toLocaleString()}
                     </span>
                     <span className="text-xs">
-                      {p.durationDays === 1
+                      {p.duration_days === 1
                         ? "1 day"
-                        : p.durationDays + " days"}
+                        : p.duration_days + " days"}
                     </span>
                   </label>
                 ))}
@@ -160,7 +240,7 @@ export default function RenewPage() {
               <Label className="text-primary-foreground">Payment Method</Label>
               <RadioGroup
                 value={paymentMethod}
-                onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                onValueChange={(v) => setPaymentMethod(v as "cash" | "gcash")}
                 className="grid grid-cols-2 gap-3"
               >
                 <label
@@ -196,10 +276,11 @@ export default function RenewPage() {
               </Button>
               <Button
                 onClick={handleRenew}
+                disabled={loading}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                 size="lg"
               >
-                Renew & Record Payment
+                {loading ? "Renewing..." : "Renew & Record Payment"}
               </Button>
             </div>
           </div>
@@ -252,7 +333,7 @@ export default function RenewPage() {
               results.map((m) => (
                 <button
                   type="button"
-                  key={m.id}
+                  key={m.profile_id}
                   onClick={() => setSelectedMember(m)}
                   className="flex w-full items-center justify-between rounded-lg border border-muted-foreground/20 bg-muted-foreground/5 p-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
                 >
@@ -270,7 +351,7 @@ export default function RenewPage() {
                       </Badge>
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {m.contactNumber} | Exp: {m.endDate}
+                      {m.contact_number ?? "N/A"} | Exp: {m.end_date}
                     </p>
                   </div>
                   <RefreshCw className="h-4 w-4 text-muted-foreground" />

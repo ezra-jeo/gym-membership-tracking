@@ -1,7 +1,7 @@
 "use client"
 
-import React, { useState, useMemo } from "react"
-import { useGym } from "@/lib/gym-context"
+import React, { useState, useMemo, useEffect, useCallback } from "react"
+import { createClient } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -30,70 +30,131 @@ import {
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
-import type { PaymentMethod } from "@/lib/types"
 import { Search, Plus, DollarSign } from "lucide-react"
 
+interface PaymentRow {
+  id: string
+  member_name: string
+  member_id: string
+  plan_name: string
+  amount_paid: number
+  payment_method: "cash" | "gcash"
+  created_at: string
+}
+
+interface MemberOption {
+  id: string
+  name: string
+}
+
+interface PlanOption {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+}
+
 export default function PaymentsPage() {
-  const { payments, members, recordPayment } = useGym()
+  const supabase = createClient()
+  const [payments, setPayments] = useState<PaymentRow[]>([])
+  const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])
+  const [planOptions, setPlanOptions] = useState<PlanOption[]>([])
   const [methodFilter, setMethodFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
 
   // Manual payment form
   const [dialogOpen, setDialogOpen] = useState(false)
   const [payMemberId, setPayMemberId] = useState("")
-  const [payAmount, setPayAmount] = useState("")
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash")
-  const [payDescription, setPayDescription] = useState("")
+  const [payPlanId, setPayPlanId] = useState("")
+  const [payMethod, setPayMethod] = useState<"cash" | "gcash">("cash")
 
-  const enriched = useMemo(() => {
-    return payments
-      .map((p) => ({
-        ...p,
-        member: members.find((m) => m.id === p.memberId),
+  const fetchData = useCallback(async () => {
+    // Fetch memberships as payments
+    const { data } = await supabase
+      .from("memberships")
+      .select("id, member_id, amount_paid, payment_method, created_at, profiles!memberships_member_id_fkey(name), membership_plans!memberships_plan_id_fkey(name)")
+      .order("created_at", { ascending: false })
+
+    setPayments(
+      (data ?? []).map((p) => ({
+        id: p.id,
+        member_name: (p.profiles as unknown as { name: string })?.name ?? "Unknown",
+        member_id: p.member_id,
+        plan_name: (p.membership_plans as unknown as { name: string })?.name ?? "Unknown",
+        amount_paid: p.amount_paid,
+        payment_method: p.payment_method,
+        created_at: p.created_at,
       }))
-      .sort((a, b) => b.date.localeCompare(a.date))
-  }, [payments, members])
+    )
+
+    // Fetch member options for the dialog
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, name")
+      .order("name")
+    setMemberOptions((profiles ?? []).map((p) => ({ id: p.id, name: p.name })))
+
+    // Fetch plan options
+    const { data: plans } = await supabase
+      .from("membership_plans")
+      .select("id, name, price, duration_days")
+    setPlanOptions(plans ?? [])
+  }, [supabase])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   const filtered = useMemo(() => {
-    let list = enriched
+    let list = payments
     if (methodFilter !== "all") {
-      list = list.filter((p) => p.method === methodFilter)
+      list = list.filter((p) => p.payment_method === methodFilter)
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
         (p) =>
-          p.member?.name.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q)
+          p.member_name.toLowerCase().includes(q) ||
+          p.plan_name.toLowerCase().includes(q)
       )
     }
     return list
-  }, [enriched, methodFilter, search])
+  }, [payments, methodFilter, search])
 
-  const totalFiltered = filtered.reduce((sum, p) => sum + p.amount, 0)
+  const totalFiltered = filtered.reduce((sum, p) => sum + p.amount_paid, 0)
 
-  function handleRecordPayment() {
-    if (!payMemberId || !payAmount || !payDescription) {
-      toast.error("Please fill all fields.")
+  async function handleRecordPayment() {
+    if (!payMemberId || !payPlanId) {
+      toast.error("Please select a member and plan.")
       return
     }
-    const amount = Number.parseFloat(payAmount)
-    if (Number.isNaN(amount) || amount <= 0) {
-      toast.error("Enter a valid amount.")
-      return
-    }
-    recordPayment({
-      memberId: payMemberId,
-      amount,
-      method: payMethod,
-      description: payDescription,
+    const plan = planOptions.find((p) => p.id === payPlanId)
+    if (!plan) return
+
+    const startDate = new Date()
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + plan.duration_days)
+
+    const { error } = await supabase.from("memberships").insert({
+      member_id: payMemberId,
+      plan_id: payPlanId,
+      start_date: startDate.toISOString().split("T")[0],
+      end_date: endDate.toISOString().split("T")[0],
+      status: "active",
+      payment_method: payMethod,
+      amount_paid: plan.price,
     })
+
+    if (error) {
+      toast.error("Failed to record payment: " + error.message)
+      return
+    }
     toast.success("Payment recorded!")
     setDialogOpen(false)
     setPayMemberId("")
-    setPayAmount("")
+    setPayPlanId("")
     setPayMethod("cash")
-    setPayDescription("")
+    fetchData()
   }
 
   return (
@@ -141,7 +202,7 @@ export default function PaymentsPage() {
                     <SelectValue placeholder="Select member" />
                   </SelectTrigger>
                   <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground max-h-48">
-                    {members.map((m) => (
+                    {memberOptions.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.name}
                       </SelectItem>
@@ -150,23 +211,19 @@ export default function PaymentsPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-primary-foreground">Amount</Label>
-                <Input
-                  type="number"
-                  value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
-                  placeholder="e.g. 1500"
-                  className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Description</Label>
-                <Input
-                  value={payDescription}
-                  onChange={(e) => setPayDescription(e.target.value)}
-                  placeholder="e.g. Monthly renewal"
-                  className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground placeholder:text-muted-foreground"
-                />
+                <Label className="text-primary-foreground">Plan</Label>
+                <Select value={payPlanId} onValueChange={setPayPlanId}>
+                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
+                    {planOptions.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} - P{p.price.toLocaleString()} ({p.duration_days} days)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label className="text-primary-foreground">
@@ -174,7 +231,7 @@ export default function PaymentsPage() {
                 </Label>
                 <RadioGroup
                   value={payMethod}
-                  onValueChange={(v) => setPayMethod(v as PaymentMethod)}
+                  onValueChange={(v) => setPayMethod(v as "cash" | "gcash")}
                   className="grid grid-cols-2 gap-3"
                 >
                   <label
@@ -256,28 +313,28 @@ export default function PaymentsPage() {
                   className="border-muted-foreground/10 hover:bg-muted-foreground/5"
                 >
                   <TableCell className="text-muted-foreground">
-                    {p.date}
+                    {p.created_at.split("T")[0]}
                   </TableCell>
                   <TableCell className="font-medium text-primary-foreground">
-                    {p.member?.name ?? "Unknown"}
+                    {p.member_name}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {p.description}
+                    {p.plan_name}
                   </TableCell>
                   <TableCell>
                     <Badge
                       variant="outline"
                       className={
-                        p.method === "gcash"
+                        p.payment_method === "gcash"
                           ? "border-blue-500/30 text-blue-400"
                           : "border-emerald-500/30 text-emerald-400"
                       }
                     >
-                      {p.method}
+                      {p.payment_method}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-medium text-primary-foreground">
-                    {"P" + p.amount.toLocaleString()}
+                    {"P" + p.amount_paid.toLocaleString()}
                   </TableCell>
                 </TableRow>
               ))

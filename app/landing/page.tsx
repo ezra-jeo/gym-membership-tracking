@@ -96,7 +96,7 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/login">
+            <Link href="/signup/member">
               <button
                 className="px-8 py-4 rounded-full font-semibold uppercase tracking-wide transition-all transform"
                 style={{
@@ -106,21 +106,22 @@ export default function LandingPage() {
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
               >
-                Get Started
+                Join as Member
               </button>
             </Link>
-            <button
-              className="px-8 py-4 rounded-full font-semibold uppercase tracking-wide border-2 transition-all"
-              style={{
-                borderColor: 'var(--color-white)',
-                color: 'var(--color-white)',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-            >
-              See How It Works
-            </button>
+            <Link href="/signup/admin">
+              <button
+                className="px-8 py-4 rounded-full font-semibold uppercase tracking-wide border-2 transition-all"
+                style={{
+                  borderColor: 'var(--color-white)',
+                  color: 'var(--color-white)',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                Register Your Gym
+              </button>
+            </Link>
           </div>
         </div>
 
@@ -433,7 +434,7 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-            <Link href="/login">
+            <Link href="/signup/member">
               <button
                 className="px-10 py-4 rounded-full font-semibold uppercase tracking-wide transition-all transform"
                 style={{
@@ -443,7 +444,20 @@ export default function LandingPage() {
                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
               >
-                Get Started
+                Join as Member
+              </button>
+            </Link>
+            <Link href="/signup/admin">
+              <button
+                className="px-10 py-4 rounded-full font-semibold uppercase tracking-wide border-2 transition-all"
+                style={{
+                  borderColor: 'var(--color-primary)',
+                  color: 'var(--color-primary)',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-primary)'; e.currentTarget.style.color = 'var(--color-white)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)'; }}
+              >
+                Register Your Gym
               </button>
             </Link>
           </div>
