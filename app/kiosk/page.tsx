@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { handleScan, type CheckInResult } from "@/lib/engagement-hooks"
+import { type CheckInResult } from "@/lib/engagement-hooks"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -63,23 +63,16 @@ export default function KioskPage() {
 
   async function loadCheckedIn() {
     const supabase = createClient()
-    const { data } = await supabase
-      .from("attendance")
-      .select("id, member_id, check_in, profiles!attendance_member_id_fkey(name)")
-      .is("check_out", null)
-      .order("check_in", { ascending: false })
-
-    if (data) {
+    // Use the kiosk_checked_in RPC to bypass RLS — kiosk has no auth session
+    const { data, error } = await supabase.rpc("kiosk_get_checked_in")
+    if (data && !error) {
       setCheckedIn(
-        data.map((d) => {
-          const p = d.profiles as unknown as { name: string } | null
-          return {
-            attendanceId: d.id,
-            memberId: d.member_id,
-            memberName: p?.name ?? "Unknown",
-            checkIn: d.check_in,
-          }
-        })
+        (data as { attendance_id: string; member_id: string; member_name: string; check_in: string }[]).map((d) => ({
+          attendanceId: d.attendance_id,
+          memberId: d.member_id,
+          memberName: d.member_name,
+          checkIn: d.check_in,
+        }))
       )
     }
   }
@@ -112,8 +105,13 @@ export default function KioskPage() {
 
           try {
             await handleQrScan(decodedText)
+          } catch (err) {
+            // handleQrScan throws on DB/scan failures — show error and reset
+            toast.error("Check-in failed. Please try again.")
+            console.error("[Kiosk] scan error:", err)
+            setScanResult(null)
           } finally {
-            // 3-second cooldown to prevent duplicate scans
+            // Always reset after 3s cooldown — prevents duplicate scans
             setTimeout(() => {
               isProcessingRef.current = false
               setScanStatus("scanning")
@@ -160,83 +158,87 @@ export default function KioskPage() {
     console.log("[Kiosk] Processing QR:", qrCode)
     const supabase = createClient()
 
-    let memberId: string | null = null
-
-    // Format: stren://checkin/{gym_id}/{member_id}
+    // Resolve the QR code to a raw value the RPC can use.
+    // Format may be: stren://checkin/{gym_id}/{member_id}  (old — extract member QR code)
+    // OR the qr_code column value directly (new format, UUID string)
+    let rawQr = qrCode
     const match = qrCode.match(/^stren:\/\/checkin\/([^/]+)\/([^/]+)$/)
     if (match) {
-      memberId = match[2]
-    } else {
-      // Fallback: look up by qr_code column value
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("qr_code", qrCode)
-        .single()
-      memberId = profile?.id ?? null
+      // Old deep-link format — reconstruct the stored qr_code value
+      rawQr = qrCode // the RPC looks up by qr_code column; old rows stored this full string
     }
 
-    if (!memberId) {
-      console.warn("[Kiosk] Unknown QR code:", qrCode)
-      toast.error("Unknown QR code.")
-      return
+    const { data, error } = await supabase.rpc("kiosk_checkin", { p_qr_code: rawQr })
+
+    if (error) {
+      console.error("[Kiosk] RPC error:", error)
+      throw new Error(error.message)
     }
 
-    const { data: memberProfile } = await supabase
-      .from("profiles")
-      .select("id, name, status")
-      .eq("id", memberId)
-      .single()
-
-    if (!memberProfile) {
-      toast.error("Member not found.")
-      return
-    }
-
-    // Allow pending + active — only block rejected
-    if (memberProfile.status === "rejected") {
-      toast.error("Cannot check in — account has been rejected.")
-      return
-    }
-
-    try {
-      const result = await handleScan(memberProfile.id)
-      setScanResult({ ...result, memberName: memberProfile.name })
-
-      if (result.status === "checked_in") {
-        toast.success(`${memberProfile.name} checked in!`)
-        if (result.streak && result.streak.currentStreak > 1) {
-          toast(`🔥 ${result.streak.currentStreak}-day streak!`)
-        }
-        result.newBadges.forEach((b) => toast(`🏅 New badge: ${b.name}!`))
+    if (data && "error" in data) {
+      // Business-logic errors returned as typed union variant
+      if (data.error === "unknown_qr") {
+        toast.error("Unknown QR code.")
+      } else if (data.error === "rejected") {
+        toast.error(`Cannot check in — ${data.member_name}'s account has been rejected.`)
       } else {
-        toast.success(`${memberProfile.name} checked out! (${result.durationMin} min)`)
+        toast.error(data.message ?? "Check-in failed.")
       }
-
-      loadCheckedIn()
-      setTimeout(() => setScanResult(null), 5000)
-    } catch (err) {
-      toast.error("Check-in failed. Please try again.")
-      console.error(err)
+      return
     }
+
+    const result = data as {
+      action: "checked_in" | "checked_out"
+      attendance_id: string
+      member_id: string
+      member_name: string
+      member_status: string
+      duration_min?: number
+    }
+
+    // Build a CheckInResult-compatible object for the banner
+    const checkInResult: CheckInResult & { memberName: string } = {
+      status: result.action === "checked_in" ? "checked_in" : "checked_out",
+      attendanceId: result.attendance_id,
+      memberName: result.member_name,
+      streak: null,   // streak data lives server-side now; fetch separately if needed
+      newBadges: [],
+      durationMin: result.duration_min ?? null,
+    }
+
+    setScanResult(checkInResult)
+
+    if (result.action === "checked_in") {
+      toast.success(`${result.member_name} checked in!`)
+    } else {
+      toast.success(`${result.member_name} checked out! (${result.duration_min} min)`)
+    }
+
+    loadCheckedIn()
+    setTimeout(() => setScanResult(null), 5000)
   }
 
-  async function handleManualCheckIn(memberId: string) {
+  async function handleManualCheckIn(memberId: string, memberName: string) {
     const supabase = createClient()
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("name")
-      .eq("id", memberId)
-      .single()
-
     try {
-      const result = await handleScan(memberId)
-      setScanResult({ ...result, memberName: profile?.name ?? "Member" })
+      const { data, error } = await supabase.rpc("kiosk_checkin_by_member", { p_member_id: memberId })
+      if (error) throw error
+      if (data && "error" in data) { toast.error(data.message ?? "Check-in failed."); return }
 
-      if (result.status === "checked_in") {
-        toast.success(`${profile?.name} checked in!`)
+      const result = data as { action: string; attendance_id: string; duration_min?: number }
+      setScanResult({
+        status: result.action === "checked_in" ? "checked_in" : "checked_out",
+        attendanceId: result.attendance_id,
+        memberName,
+        streak: null,
+        newBadges: [],
+        durationMin: result.duration_min ?? null,
+      })
+
+      if (result.action === "checked_in") {
+        toast.success(`${memberName} checked in!`)
       } else {
-        toast.success(`${profile?.name} checked out! (${result.durationMin} min)`)
+        toast.success(`${memberName} checked out! (${result.duration_min} min)`)
       }
 
       loadCheckedIn()
@@ -250,9 +252,22 @@ export default function KioskPage() {
   }
 
   async function handleManualCheckOut(memberId: string) {
+    const supabase = createClient()
+    // Find the open attendance row for this member
+    const { data: openRow } = await supabase.rpc("kiosk_get_checked_in")
+    const entry = (openRow as { attendance_id: string; member_id: string; member_name: string; check_in: string }[] | null)
+      ?.find((r) => r.member_id === memberId)
+
+    if (!entry) {
+      toast.error("No open session found.")
+      return
+    }
+
     try {
-      const result = await handleScan(memberId)
-      toast.success(`Checked out! (${result.durationMin} min)`)
+      const { data, error } = await supabase.rpc("kiosk_checkout", { p_attendance_id: entry.attendance_id })
+      if (error) throw error
+      if (data && "error" in data) { toast.error("Session not found."); return }
+      toast.success(`Checked out! (${data.duration_min} min)`)
       loadCheckedIn()
     } catch {
       toast.error("Check-out failed.")
@@ -264,38 +279,23 @@ export default function KioskPage() {
     if (!q) return
     const supabase = createClient()
 
-    // Left-join memberships so members with no plan still appear
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, name, email, contact_number, memberships(status, end_date, membership_plans(name))")
-      .or(`name.ilike.%${q}%,contact_number.ilike.%${q}%`)
-      .eq("role", "member")
-      .order("name")
-      .limit(10)
+    const { data, error } = await supabase.rpc("kiosk_search_members", { p_query: q })
+    if (error) { toast.error("Search failed."); return }
 
-    if (data) {
-      setResults(
-        data.map((p) => {
-          const memberships = p.memberships as unknown as {
-            status: string
-            end_date: string
-            membership_plans: { name: string } | null
-          }[] | null
-          // Pick the most recent active membership, or just the first one
-          const active = memberships?.find((m) => m.status === "active")
-          const latest = active ?? memberships?.[0]
-          return {
-            id: p.id,
-            name: p.name,
-            email: p.email,
-            contactNumber: p.contact_number,
-            membershipStatus: latest?.status ?? "none",
-            planName: latest?.membership_plans?.name ?? "No plan",
-            endDate: latest?.end_date ?? "—",
-          }
-        })
-      )
-    }
+    setResults(
+      ((data ?? []) as {
+        id: string; name: string; email: string; contact_number: string | null;
+        membership_status: string | null; plan_name: string | null; end_date: string | null;
+      }[]).map((p) => ({
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        contactNumber: p.contact_number,
+        membershipStatus: p.membership_status ?? "none",
+        planName: p.plan_name ?? "No plan",
+        endDate: p.end_date ?? "—",
+      }))
+    )
     setSearched(true)
   }
 
@@ -528,7 +528,7 @@ export default function KioskPage() {
                       ) : (
                         <Button
                           size="sm"
-                          onClick={() => handleManualCheckIn(m.id)}
+                          onClick={() => handleManualCheckIn(m.id, m.name)}
                           className="gap-1.5"
                           style={{ backgroundColor: "var(--color-primary)", color: "white" }}
                         >

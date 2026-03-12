@@ -529,6 +529,50 @@ export interface Database {
           gym_code: string
         }
       }
+      // ── Kiosk RPCs (callable by anon key, no auth session required) ──
+      kiosk_checkin: {
+        Args: { p_qr_code: string }
+        Returns:
+          | { error: "unknown_qr" | "rejected"; message: string; member_name?: string }
+          | { action: "checked_in"; attendance_id: string; member_id: string; member_name: string; member_status: string; duration_min: null }
+          | { action: "checked_out"; attendance_id: string; member_id: string; member_name: string; duration_min: number }
+      }
+      kiosk_checkin_by_member: {
+        Args: { p_member_id: string }
+        Returns:
+          | { error: "not_found"; message: string }
+          | { action: "checked_in"; attendance_id: string; member_id: string; member_name: string; member_status: string; duration_min: null }
+          | { action: "checked_out"; attendance_id: string; member_id: string; member_name: string; duration_min: number }
+      }
+      kiosk_checkout: {
+        Args: { p_attendance_id: string }
+        Returns: { error: "not_found" } | { duration_min: number }
+      }
+      kiosk_get_checked_in: {
+        Args: Record<string, never>
+        Returns: {
+          attendance_id: string
+          member_id: string
+          member_name: string
+          check_in: string
+        }[]
+      }
+      kiosk_search_members: {
+        Args: { p_query: string }
+        Returns: {
+          id: string
+          name: string
+          email: string
+          contact_number: string | null
+          membership_status: string | null
+          plan_name: string | null
+          end_date: string | null
+        }[]
+      }
+      kiosk_update_streak: {
+        Args: { p_member_id: string; p_gym_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       user_role: "member" | "admin" | "staff" | "owner"
