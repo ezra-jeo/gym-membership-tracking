@@ -124,7 +124,7 @@ export default function LoginPage() {
               className="text-lg"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              Gym Engagement Platform
+              Gym Management, Simplified
             </p>
           </div>
 
@@ -224,49 +224,54 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo access — dev only */}
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="mt-6">
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t" style={{ borderColor: 'var(--color-light-gray)' }} />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2" style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-text-muted)' }}>
-                    DEMO ACCESS
-                  </span>
-                </div>
+          {/* Preview access — visible in all environments for pitch demos */}
+          <div className="mt-6">
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t" style={{ borderColor: 'var(--color-light-gray)' }} />
               </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    demoSignIn('admin');
-                    router.push('/admin');
-                    router.refresh();
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
-                  style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
-                >
-                  <Shield size={14} />
-                  Demo Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    demoSignIn('member');
-                    router.push('/member');
-                    router.refresh();
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
-                  style={{ borderColor: 'var(--color-text-secondary)', color: 'var(--color-text-secondary)' }}
-                >
-                  <User size={14} />
-                  Demo Member
-                </button>
+              <div className="relative flex justify-center text-xs">
+                <span className="px-2" style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-text-muted)' }}>
+                  PREVIEW WITH SAMPLE DATA
+                </span>
               </div>
             </div>
-          )}
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  demoSignIn('admin');
+                  router.push('/admin');
+                  router.refresh();
+                }}
+                className="w-full flex items-center justify-center gap-2.5 py-3 rounded-lg border-2 text-sm font-semibold transition-all duration-200 hover:scale-[1.02]"
+                style={{
+                  borderColor: 'var(--color-primary)',
+                  color: 'var(--color-primary)',
+                  backgroundColor: 'var(--color-primary-glow)',
+                }}
+              >
+                <Shield size={16} />
+                Preview as Gym Owner
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  demoSignIn('member');
+                  router.push('/member');
+                  router.refresh();
+                }}
+                className="w-full flex items-center justify-center gap-2.5 py-3 rounded-lg border text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
+                style={{
+                  borderColor: 'var(--color-surface)',
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                <User size={16} />
+                Preview as Member
+              </button>
+            </div>
+          </div>
 
           <div className="mt-8 text-center">
             <p style={{ color: 'var(--color-text-secondary)' }}>
@@ -292,7 +297,7 @@ export default function LoginPage() {
           className="text-center text-xs mt-6"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Stren © 2026. All rights reserved.
+          Powered by Stren · Built for independent gyms
         </p>
       </div>
     </div>

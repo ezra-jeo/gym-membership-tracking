@@ -16,6 +16,25 @@ export interface Database {
           code: string
           address: string | null
           phone: string | null
+          settings_json: {
+            logo_url?: string | null
+            primary_color?: string | null
+            cover_image_url?: string | null
+            tagline?: string | null
+            social_links?: {
+              facebook?: string | null
+              instagram?: string | null
+            }
+            features_enabled?: {
+              qr_checkin?: boolean
+              payment_tracking?: boolean
+              class_scheduling?: boolean
+              trainer_management?: boolean
+              challenges?: boolean
+              leaderboard?: boolean
+            }
+            kiosk_message?: string | null
+          }
           created_at: string
         }
         Insert: {
@@ -24,6 +43,7 @@ export interface Database {
           code: string
           address?: string | null
           phone?: string | null
+          settings_json?: Json
           created_at?: string
         }
         Update: {
@@ -32,6 +52,7 @@ export interface Database {
           code?: string
           address?: string | null
           phone?: string | null
+          settings_json?: Json
           created_at?: string
         }
         Relationships: []

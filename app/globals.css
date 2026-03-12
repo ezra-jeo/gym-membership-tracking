@@ -143,3 +143,30 @@ body {
   color: var(--color-text-primary);
   background-color: var(--color-background);
 }
+
+/* ─── Ken Burns hero animation ─── */
+@keyframes ken-burns {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.08); }
+}
+
+.animate-ken-burns {
+  animation: ken-burns 20s ease-in-out infinite alternate;
+}
+
+/* ─── Warm cinematic photo treatment ─── */
+.photo-warm {
+  filter: sepia(0.08) saturate(1.1);
+}
+
+/* ─── Scroll reveal ─── */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+}
+
+.scroll-reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
