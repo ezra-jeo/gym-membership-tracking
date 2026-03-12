@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { FeedItem } from '@/lib/types';
@@ -11,26 +11,9 @@ export default function FeedPage() {
   const { profile } = useAuth();
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => {
-    loadFeed();
-    // Set up realtime subscription
-    const supabase = createClient();
-    const channel = supabase
-      .channel('feed')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'feed_items' }, (payload) => {
-        // Prepend new items to feed
-        loadFeed();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  async function loadFeed() {
-    const supabase = createClient();
+  const loadFeed = useCallback(async () => {
     const { data } = await supabase
       .from('feed_items')
       .select('*, profiles!feed_items_member_id_fkey(name, avatar_url)')
@@ -54,7 +37,6 @@ export default function FeedPage() {
         };
       });
 
-      // Check which items the current user has kudosed
       if (profile) {
         const { data: kudosData } = await supabase
           .from('kudos')
@@ -70,11 +52,39 @@ export default function FeedPage() {
       setFeedItems(items);
     }
     setIsLoading(false);
-  }
+  }, [supabase, profile]);
+
+  useEffect(() => {
+    loadFeed();
+
+    const channel = supabase
+      .channel('feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'feed_items' }, (payload) => {
+        const row = payload.new as Record<string, unknown>;
+        const newItem: FeedItem = {
+          id: row.id as string,
+          memberId: row.member_id as string,
+          type: row.type as FeedItem['type'],
+          title: row.title as string,
+          description: (row.description as string) ?? null,
+          metadata: (row.metadata as Record<string, unknown>) ?? null,
+          kudosCount: 0,
+          createdAt: row.created_at as string,
+          memberName: 'Gym Member',
+          memberAvatar: null,
+          hasKudosed: false,
+        };
+        setFeedItems((prev) => [newItem, ...prev.slice(0, 49)]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadFeed, supabase]);
 
   async function handleKudos(feedItemId: string) {
     if (!profile) return;
-    const supabase = createClient();
 
     const item = feedItems.find((f) => f.id === feedItemId);
     if (!item || item.hasKudosed || item.memberId === profile.id) return;

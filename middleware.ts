@@ -55,7 +55,7 @@ export async function middleware(request: NextRequest) {
       // Use maybeSingle — profile may not exist yet if trigger hasn't fired
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role, status")
+        .select("role, status, gym_id")
         .eq("id", user.id)
         .maybeSingle()
 
@@ -85,7 +85,7 @@ export async function middleware(request: NextRequest) {
   // Use maybeSingle — avoids 406 if profile row doesn't exist yet
   const { data: profile } = await  supabase
     .from("profiles")
-    .select("role, status")
+    .select("role, status, gym_id")
     .eq("id", user.id)
     .maybeSingle()
 
@@ -105,6 +105,9 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/admin", request.url))
   }
+
+  if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
+  supabaseResponse.headers.set("x-user-role", profile.role)
 
   return supabaseResponse
 }

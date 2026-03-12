@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 
 export default function ReportsPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [activeCount, setActiveCount] = useState(0)
   const [expiredCount, setExpiredCount] = useState(0)
@@ -36,106 +36,26 @@ export default function ReportsPage() {
   const [avgDailyVisits, setAvgDailyVisits] = useState("0")
 
   const fetchData = useCallback(async () => {
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      .toISOString()
-      .split("T")[0]
+    const { data, error } = await supabase.rpc('admin_reports_data', { p_days: 14 })
+    if (error || !data) return
 
-    // Membership counts
-    const { data: mships } = await supabase.from("memberships").select("status")
-    const statuses = mships ?? []
-    setActiveCount(statuses.filter((m) => m.status === "active").length)
-    setExpiredCount(statuses.filter((m) => m.status === "expired").length)
-
-    // Month revenue
-    const { data: monthPayments } = await supabase
-      .from("memberships")
-      .select("amount_paid, created_at")
-      .gte("created_at", monthStart + "T00:00:00")
-    setMonthRevenue((monthPayments ?? []).reduce((sum, p) => sum + p.amount_paid, 0))
-
-    // Attendance last 14 days
-    const attData: { date: string; visits: number }[] = []
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0]
-      const { count } = await supabase
-        .from("attendance")
-        .select("id", { count: "exact", head: true })
-        .gte("check_in", ds + "T00:00:00")
-        .lt("check_in", ds + "T23:59:59.999")
-      attData.push({
-        date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        visits: count ?? 0,
-      })
-    }
-    setAttendanceData(attData)
-    const totalVisits = attData.reduce((s, d) => s + d.visits, 0)
-    setAvgDailyVisits((totalVisits / attData.length).toFixed(1))
-
-    // Revenue last 14 days
-    const revData: { date: string; revenue: number }[] = []
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0]
-      const { data: dayPayments } = await supabase
-        .from("memberships")
-        .select("amount_paid")
-        .gte("created_at", ds + "T00:00:00")
-        .lt("created_at", ds + "T23:59:59.999")
-      revData.push({
-        date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        revenue: (dayPayments ?? []).reduce((sum, p) => sum + p.amount_paid, 0),
-      })
-    }
-    setRevenueData(revData)
-
-    // Peak hours
-    const { data: allAttendance } = await supabase.from("attendance").select("check_in")
-    const hourMap: Record<number, number> = {}
-    for (const c of allAttendance ?? []) {
-      const hour = new Date(c.check_in).getHours()
-      hourMap[hour] = (hourMap[hour] || 0) + 1
-    }
-    const sortedHours = Object.entries(hourMap)
-      .map(([hour, count]) => ({
-        hour: Number(hour),
-        label: `${Number(hour) % 12 || 12}${Number(hour) < 12 ? "AM" : "PM"}`,
-        count,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6)
-    setPeakHours(sortedHours)
-
-    // Revenue by day of month
-    const { data: allPayments } = await supabase.from("memberships").select("amount_paid, created_at")
-    const dayMap: Record<number, number> = {}
-    for (const p of allPayments ?? []) {
-      const day = new Date(p.created_at).getDate()
-      dayMap[day] = (dayMap[day] || 0) + p.amount_paid
-    }
-    const sortedDays = Object.entries(dayMap)
-      .map(([day, amount]) => ({ day: Number(day), amount }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 5)
-    setRevenueByDayOfMonth(sortedDays)
-
-    // Payment method breakdown
-    const cash = (allPayments ?? []).filter((p) => (p as { payment_method?: string }).payment_method === "cash")
-    const gcash = (allPayments ?? []).filter((p) => (p as { payment_method?: string }).payment_method === "gcash")
-    // Need to re-fetch with payment_method
-    const { data: allMships } = await supabase.from("memberships").select("amount_paid, payment_method")
-    const cashMships = (allMships ?? []).filter((m) => m.payment_method === "cash")
-    const gcashMships = (allMships ?? []).filter((m) => m.payment_method === "gcash")
+    setActiveCount(data.active_count)
+    setExpiredCount(data.expired_count)
+    setMonthRevenue(data.month_revenue)
+    setAttendanceData(data.attendance_by_day)
+    setRevenueData(data.revenue_by_day)
+    setPeakHours(data.peak_hours)
+    setRevenueByDayOfMonth(data.revenue_by_dom)
     setMethodBreakdown({
-      cashTotal: cashMships.reduce((s, m) => s + m.amount_paid, 0),
-      cashCount: cashMships.length,
-      gcashTotal: gcashMships.reduce((s, m) => s + m.amount_paid, 0),
-      gcashCount: gcashMships.length,
+      cashTotal:  data.method_breakdown.cash_total,
+      cashCount:  data.method_breakdown.cash_count,
+      gcashTotal: data.method_breakdown.gcash_total,
+      gcashCount: data.method_breakdown.gcash_count,
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+
+    const totalVisits = data.attendance_by_day.reduce((s: number, d: { visits: number }) => s + d.visits, 0)
+    setAvgDailyVisits((totalVisits / data.attendance_by_day.length).toFixed(1))
+  }, [supabase])
 
   useEffect(() => {
     fetchData()

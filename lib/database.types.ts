@@ -573,6 +573,70 @@ export interface Database {
         Args: { p_member_id: string; p_gym_id: string }
         Returns: undefined
       }
+      admin_dashboard_stats: {
+        Args: Record<string, never>
+        Returns: {
+          currently_in: { id: string; member_id: string; check_in: string; name: string }[]
+          today_visits: number
+          total_members: number
+          pending_count: number
+          active_plans: number
+          expired_plans: number
+          frozen_plans: number
+          today_revenue: number
+          month_revenue: number
+          attendance_7d: { day: string; date: string; visits: number }[]
+          revenue_7d: { day: string; date: string; revenue: number }[]
+        }
+      }
+      admin_reports_data: {
+        Args: { p_days?: number }
+        Returns: {
+          active_count: number
+          expired_count: number
+          month_revenue: number
+          attendance_by_day: { date: string; visits: number }[]
+          revenue_by_day: { date: string; revenue: number }[]
+          peak_hours: { hour: number; label: string; count: number }[]
+          revenue_by_dom: { day: number; amount: number }[]
+          method_breakdown: {
+            cash_total: number; cash_count: number
+            gcash_total: number; gcash_count: number
+          }
+        }
+      }
+      leaderboard_visits: {
+        Args: { p_limit?: number }
+        Returns: { member_id: string; member_name: string; avatar_url: string | null; value: number }[]
+      }
+      leaderboard_duration: {
+        Args: { p_limit?: number }
+        Returns: { member_id: string; member_name: string; avatar_url: string | null; value: number }[]
+      }
+      leaderboard_streak: {
+        Args: { p_limit?: number }
+        Returns: { member_id: string; member_name: string; avatar_url: string | null; value: number }[]
+      }
+      search_gyms: {
+        Args: { p_query: string }
+        Returns: { id: string; name: string; code: string; address: string | null }[]
+      }
+      member_home_stats: {
+        Args: Record<string, never>
+        Returns: {
+          total_visits: number
+          monthly_visits: number
+          avg_session_minutes: number
+          badges_earned: number
+          total_badges: number
+          streak: {
+            current_streak: number
+            best_streak: number
+            last_visit_date: string | null
+          }
+          recent_visits: { date: string; duration_min: number | null }[]
+        }
+      }
     }
     Enums: {
       user_role: "member" | "admin" | "staff" | "owner"

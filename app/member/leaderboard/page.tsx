@@ -22,98 +22,33 @@ export default function LeaderboardPage() {
   async function loadLeaderboard() {
     setIsLoading(true);
     const supabase = createClient();
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-    let leaderboard: LeaderboardEntry[] = [];
+    type Row = { member_id: string; member_name: string; avatar_url: string | null; value: number }
+    let rows: Row[] = []
 
     if (category === 'visits') {
-      const { data } = await supabase
-        .from('attendance')
-        .select('member_id, profiles!attendance_member_id_fkey(name, avatar_url)')
-        .gte('check_in', monthStart);
-
-      if (data) {
-        const counts = new Map<string, { name: string; avatar: string | null; count: number }>();
-        for (const row of data) {
-          const p = row.profiles as unknown as { name: string; avatar_url: string | null } | null;
-          const existing = counts.get(row.member_id);
-          if (existing) {
-            existing.count++;
-          } else {
-            counts.set(row.member_id, { name: p?.name ?? 'Unknown', avatar: p?.avatar_url ?? null, count: 1 });
-          }
-        }
-
-        leaderboard = Array.from(counts.entries())
-          .map(([id, data]) => ({
-            memberId: id,
-            memberName: data.name,
-            avatarUrl: data.avatar,
-            value: data.count,
-            rank: 0,
-          }))
-          .sort((a, b) => b.value - a.value)
-          .map((entry, i) => ({ ...entry, rank: i + 1 }));
-      }
+      const { data } = await supabase.rpc('leaderboard_visits', { p_limit: 50 })
+      rows = (data ?? []) as Row[]
     } else if (category === 'duration') {
-      const { data } = await supabase
-        .from('attendance')
-        .select('member_id, duration_min, profiles!attendance_member_id_fkey(name, avatar_url)')
-        .gte('check_in', monthStart)
-        .not('duration_min', 'is', null);
-
-      if (data) {
-        const totals = new Map<string, { name: string; avatar: string | null; total: number }>();
-        for (const row of data) {
-          const p = row.profiles as unknown as { name: string; avatar_url: string | null } | null;
-          const existing = totals.get(row.member_id);
-          const dur = row.duration_min ?? 0;
-          if (existing) {
-            existing.total += dur;
-          } else {
-            totals.set(row.member_id, { name: p?.name ?? 'Unknown', avatar: p?.avatar_url ?? null, total: dur });
-          }
-        }
-
-        leaderboard = Array.from(totals.entries())
-          .map(([id, data]) => ({
-            memberId: id,
-            memberName: data.name,
-            avatarUrl: data.avatar,
-            value: data.total,
-            rank: 0,
-          }))
-          .sort((a, b) => b.value - a.value)
-          .map((entry, i) => ({ ...entry, rank: i + 1 }));
-      }
-    } else if (category === 'streak') {
-      const { data } = await supabase
-        .from('streaks')
-        .select('member_id, current_streak, profiles!streaks_member_id_fkey(name, avatar_url)')
-        .gt('current_streak', 0)
-        .order('current_streak', { ascending: false })
-        .limit(50);
-
-      if (data) {
-        leaderboard = data.map((row, i) => {
-          const p = row.profiles as unknown as { name: string; avatar_url: string | null } | null;
-          return {
-            memberId: row.member_id,
-            memberName: p?.name ?? 'Unknown',
-            avatarUrl: p?.avatar_url ?? null,
-            value: row.current_streak,
-            rank: i + 1,
-          };
-        });
-      }
+      const { data } = await supabase.rpc('leaderboard_duration', { p_limit: 50 })
+      rows = (data ?? []) as Row[]
+    } else {
+      const { data } = await supabase.rpc('leaderboard_streak', { p_limit: 50 })
+      rows = (data ?? []) as Row[]
     }
 
-    // Find my rank
-    const myEntry = leaderboard.find((e) => e.memberId === profile?.id);
-    setMyRank(myEntry?.rank ?? null);
-    setEntries(leaderboard.slice(0, 50));
-    setIsLoading(false);
+    const leaderboard: LeaderboardEntry[] = rows.map((row, i) => ({
+      memberId:   row.member_id,
+      memberName: row.member_name,
+      avatarUrl:  row.avatar_url,
+      value:      Number(row.value),
+      rank:       i + 1,
+    }))
+
+    setEntries(leaderboard)
+    const myEntry = leaderboard.find((e) => e.memberId === profile?.id)
+    setMyRank(myEntry?.rank ?? null)
+    setIsLoading(false)
   }
 
   const categoryLabels: Record<LeaderboardCategory, { label: string; icon: React.ReactNode; unit: string }> = {

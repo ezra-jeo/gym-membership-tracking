@@ -31,10 +31,7 @@ export default function MemberSignUpPage() {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       const { data, error } = await supabase
-        .from('gyms')
-        .select('id, name, code, address')
-        .or(`name.ilike.%${query}%,code.ilike.%${query}%`)
-        .limit(5);
+        .rpc('search_gyms', { p_query: query });
       if (error) console.error('Gym search error:', error.message);
       setGyms(data ?? []);
       setSearching(false);

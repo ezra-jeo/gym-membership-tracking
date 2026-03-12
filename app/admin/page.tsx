@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -28,7 +28,7 @@ import {
 import { toast } from "sonner"
 
 export default function AdminDashboard() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [checkedIn, setCheckedIn] = useState<
     { id: string; member_id: string; check_in: string; name: string }[]
@@ -44,106 +44,22 @@ export default function AdminDashboard() {
   const [attendanceData, setAttendanceData] = useState<{ day: string; visits: number }[]>([])
   const [revenueData, setRevenueData]     = useState<{ day: string; revenue: number }[]>([])
 
-  const today = new Date().toISOString().split("T")[0]
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    .toISOString()
-    .split("T")[0]
-
   const fetchData = useCallback(async () => {
-    // Currently checked in
-    const { data: checkedInData } = await supabase
-      .from("attendance")
-      .select("id, member_id, check_in, profiles!attendance_member_id_fkey(name)")
-      .is("check_out", null)
-    setCheckedIn(
-      (checkedInData ?? []).map((c) => ({
-        id: c.id,
-        member_id: c.member_id,
-        check_in: c.check_in,
-        name: (c.profiles as unknown as { name: string })?.name ?? "Unknown",
-      }))
-    )
+    const { data, error } = await supabase.rpc('admin_dashboard_stats')
+    if (error || !data) return
 
-    // Today visits
-    const { count: todayCount } = await supabase
-      .from("attendance")
-      .select("id", { count: "exact", head: true })
-      .gte("check_in", today + "T00:00:00")
-      .lt("check_in", today + "T23:59:59.999")
-    setTodayVisits(todayCount ?? 0)
-
-    // ── Total members from profiles (not memberships) ──────────────
-    // This ensures members who signed up but have no plan still count
-    const { data: allMembers } = await supabase
-      .from("profiles")
-      .select("id, status")
-      .eq("role", "member")
-
-    const members = allMembers ?? []
-    setTotalMembers(members.length)
-    setPendingCount(members.filter((m) => m.status === "pending").length)
-
-    // Membership plan statuses (separate — for plan breakdown widget)
-    const { data: mships } = await supabase
-      .from("memberships")
-      .select("status")
-    const statuses = mships ?? []
-    setActiveCount(statuses.filter((m) => m.status === "active").length)
-    setExpiredCount(statuses.filter((m) => m.status === "expired").length)
-    setFrozenCount(statuses.filter((m) => m.status === "frozen").length)
-
-    // Today revenue
-    const { data: todayPayments } = await supabase
-      .from("memberships")
-      .select("amount_paid")
-      .gte("created_at", today + "T00:00:00")
-      .lt("created_at", today + "T23:59:59.999")
-    setTodayRevenue((todayPayments ?? []).reduce((sum, p) => sum + (p.amount_paid ?? 0), 0))
-
-    // Month revenue
-    const { data: monthPayments } = await supabase
-      .from("memberships")
-      .select("amount_paid")
-      .gte("created_at", monthStart + "T00:00:00")
-    setMonthRevenue((monthPayments ?? []).reduce((sum, p) => sum + (p.amount_paid ?? 0), 0))
-
-    // Attendance last 7 days
-    const attData: { day: string; visits: number }[] = []
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0]
-      const { count } = await supabase
-        .from("attendance")
-        .select("id", { count: "exact", head: true })
-        .gte("check_in", ds + "T00:00:00")
-        .lt("check_in", ds + "T23:59:59.999")
-      attData.push({
-        day: d.toLocaleDateString("en-US", { weekday: "short" }),
-        visits: count ?? 0,
-      })
-    }
-    setAttendanceData(attData)
-
-    // Revenue last 7 days
-    const revData: { day: string; revenue: number }[] = []
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split("T")[0]
-      const { data: dayPayments } = await supabase
-        .from("memberships")
-        .select("amount_paid")
-        .gte("created_at", ds + "T00:00:00")
-        .lt("created_at", ds + "T23:59:59.999")
-      revData.push({
-        day: d.toLocaleDateString("en-US", { weekday: "short" }),
-        revenue: (dayPayments ?? []).reduce((sum, p) => sum + (p.amount_paid ?? 0), 0),
-      })
-    }
-    setRevenueData(revData)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    setCheckedIn(data.currently_in)
+    setTodayVisits(data.today_visits)
+    setTotalMembers(data.total_members)
+    setPendingCount(data.pending_count)
+    setActiveCount(data.active_plans)
+    setExpiredCount(data.expired_plans)
+    setFrozenCount(data.frozen_plans)
+    setTodayRevenue(data.today_revenue)
+    setMonthRevenue(data.month_revenue)
+    setAttendanceData(data.attendance_7d)
+    setRevenueData(data.revenue_7d)
+  }, [supabase])
 
   useEffect(() => {
     fetchData()

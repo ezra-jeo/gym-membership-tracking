@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { getStreak } from '@/lib/streaks';
 import { Flame, TrendingUp, Clock, Award, Calendar, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import type { MemberStats } from '@/lib/types';
@@ -23,51 +22,28 @@ export default function MemberHomePage() {
     if (!profile) return;
     const supabase = createClient();
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-    const [
-      { count: totalVisits },
-      { count: monthlyVisits },
-      streakData,
-      { data: avgData },
-      { count: badgesEarned },
-      { count: totalBadges },
-      { data: recent },
-    ] = await Promise.all([
-      supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('member_id', profile.id),
-      supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('member_id', profile.id).gte('check_in', monthStart),
-      getStreak(profile.id),
-      supabase.from('attendance').select('duration_min').eq('member_id', profile.id).not('duration_min', 'is', null),
-      supabase.from('member_badges').select('*', { count: 'exact', head: true }).eq('member_id', profile.id),
-      supabase.from('badges').select('*', { count: 'exact', head: true }),
-      supabase.from('attendance').select('check_in, duration_min').eq('member_id', profile.id).order('check_in', { ascending: false }).limit(7),
-    ]);
-
-    const durations = avgData?.map((d) => d.duration_min).filter(Boolean) as number[] ?? [];
-    const avgSessionMinutes = durations.length > 0
-      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-      : 0;
+    const { data, error } = await supabase.rpc('member_home_stats')
+    if (error || !data) { setIsLoading(false); return }
 
     setStats({
-      totalVisits: totalVisits ?? 0,
-      monthlyVisits: monthlyVisits ?? 0,
-      currentStreak: streakData.currentStreak,
-      bestStreak: streakData.bestStreak,
-      avgSessionMinutes,
-      badgesEarned: badgesEarned ?? 0,
-      totalBadges: totalBadges ?? 0,
-      leaderboardRank: null,
-    });
+      totalVisits:         data.total_visits,
+      monthlyVisits:       data.monthly_visits,
+      currentStreak:       data.streak.current_streak,
+      bestStreak:          data.streak.best_streak,
+      avgSessionMinutes:   data.avg_session_minutes,
+      badgesEarned:        data.badges_earned,
+      totalBadges:         data.total_badges,
+      leaderboardRank:     null,
+    })
 
     setRecentVisits(
-      recent?.map((r) => ({
-        date: r.check_in,
+      data.recent_visits.map((r: { date: string; duration_min: number | null }) => ({
+        date:     r.date,
         duration: r.duration_min,
-      })) ?? []
-    );
+      }))
+    )
 
-    setIsLoading(false);
+    setIsLoading(false)
   }
 
   if (isLoading || !profile) {
