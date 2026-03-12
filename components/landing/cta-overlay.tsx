@@ -1,11 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import Image from 'next/image';
 import { Shield, User } from 'lucide-react';
 import { track } from '@vercel/analytics';
+import { useAuth } from '@/lib/auth-context';
 
-export function CTABand() {
+export function CTAOverlay() {
   const router = useRouter();
   const { demoSignIn } = useAuth();
 
@@ -17,39 +18,47 @@ export function CTABand() {
   };
 
   return (
-    <section
-      className="relative py-24 lg:py-32 px-6 lg:px-12 overflow-hidden"
-      style={{ backgroundColor: 'var(--color-charcoal)' }}
-    >
-      {/* Subtle gradient accent */}
+    <section className="relative py-32 lg:py-40 px-6 lg:px-12 overflow-hidden">
+      {/* Background image */}
+      <Image
+        src="/owner-success.jpg"
+        alt="Gym owner"
+        fill
+        className="object-cover"
+        loading="lazy"
+        quality={75}
+      />
+
+      {/* Dark gradient overlay */}
       <div
-        className="absolute inset-0 opacity-30"
+        className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse at 50% 0%, var(--color-primary-glow) 0%, transparent 70%)',
+            'linear-gradient(to top, rgba(26,26,26,0.75) 0%, rgba(26,26,26,0.45) 100%)',
         }}
       />
 
+      {/* Content */}
       <div className="relative z-10 max-w-2xl mx-auto text-center">
         <h2
           className="font-bold mb-4 leading-tight"
           style={{
             fontFamily: 'var(--font-heading)',
             fontSize: 'var(--type-section)',
-            color: 'var(--color-white)',
+            color: '#FFFFFF',
           }}
         >
-          Get a better look on how Stren works
+          See what Stren can do for your gym.
         </h2>
 
         <p
           className="mb-10"
           style={{
-            color: 'var(--color-light-gray)',
+            color: 'rgba(255,255,255,0.75)',
             fontSize: 'var(--type-body)',
           }}
         >
-          Free during pilot · No credit card required
+          Student-led. We make things happen.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -72,7 +81,7 @@ export function CTABand() {
             className="inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-widest border-2 transition-all duration-200 hover:scale-105 hover:bg-white/10 cursor-pointer"
             style={{
               borderColor: 'rgba(255,255,255,0.25)',
-              color: 'var(--color-white)',
+              color: '#FFFFFF',
             }}
           >
             <User size={18} />

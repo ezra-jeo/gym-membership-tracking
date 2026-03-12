@@ -95,9 +95,9 @@ export function ContactFooter() {
             </h4>
             <div className="space-y-3">
               {[
-                { label: 'About', href: '#about' },
+                { label: 'About Stren', href: '#about' },
                 { label: 'Features', href: '#features' },
-                { label: 'Testimonials', href: '#testimonials' },
+                { label: 'Contact Us', href: '#contact' },
                 { label: 'Sign In', href: '/login' },
               ].map((link) =>
                 link.href.startsWith('#') ? (

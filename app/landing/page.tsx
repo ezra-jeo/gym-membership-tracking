@@ -1,9 +1,8 @@
 import { LandingNav } from '@/components/landing/landing-nav';
 import { LandingHero } from '@/components/landing/landing-hero';
 import { AboutSection } from '@/components/landing/about-section';
-import { FeatureRows } from '@/components/landing/feature-rows';
-import { Testimonials } from '@/components/landing/testimonials';
-import { CTABand } from '@/components/landing/cta-band';
+import { FeatureTabViewer } from '@/components/landing/feature-tab-viewer';
+import { CTAOverlay } from '@/components/landing/cta-overlay';
 import { ContactFooter } from '@/components/landing/contact-footer';
 import { ScrollReveal } from '@/components/landing/scroll-reveal';
 
@@ -18,14 +17,12 @@ export default function LandingPage() {
       </ScrollReveal>
 
       <ScrollReveal delay={100} section="features">
-        <FeatureRows />
+        <FeatureTabViewer />
       </ScrollReveal>
 
-      <ScrollReveal delay={100} section="testimonials">
-        <Testimonials />
+      <ScrollReveal delay={100} section="cta">
+        <CTAOverlay />
       </ScrollReveal>
-
-      <CTABand />
 
       <ContactFooter />
     </div>
