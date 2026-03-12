@@ -34,6 +34,20 @@ export interface Database {
               leaderboard?: boolean
             }
             kiosk_message?: string | null
+            hero_video_url?: string | null
+            hero_poster_url?: string | null
+            hero_headline?: string | null
+            hero_subline?: string | null
+            contact_email?: string | null
+            contact_phone?: string | null
+            contact_address?: string | null
+            landing_testimonials?: Array<{
+              quote: string
+              name: string
+              role: string
+              gym_name: string
+              avatar_url?: string | null
+            }>
           }
           created_at: string
         }

@@ -1,14 +1,17 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { track } from '@vercel/analytics';
 
 interface ScrollRevealProps {
   children: ReactNode;
   className?: string;
   delay?: number;
+  /** Used for analytics section_view event */
+  section?: string;
 }
 
-export function ScrollReveal({ children, className = '', delay = 0 }: ScrollRevealProps) {
+export function ScrollReveal({ children, className = '', delay = 0, section }: ScrollRevealProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,6 +24,7 @@ export function ScrollReveal({ children, className = '', delay = 0 }: ScrollReve
           setTimeout(() => {
             el.classList.add('revealed');
           }, delay);
+          if (section) track('section_view', { section });
           observer.unobserve(el);
         }
       },
@@ -29,7 +33,7 @@ export function ScrollReveal({ children, className = '', delay = 0 }: ScrollReve
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [delay]);
+  }, [delay, section]);
 
   return (
     <div ref={ref} className={`scroll-reveal ${className}`}>

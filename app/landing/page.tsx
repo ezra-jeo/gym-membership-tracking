@@ -1,14 +1,10 @@
-'use client';
-
 import { LandingNav } from '@/components/landing/landing-nav';
 import { LandingHero } from '@/components/landing/landing-hero';
-import { FeatureShowcase } from '@/components/landing/feature-showcase';
-import { WhatYouCanDo } from '@/components/landing/what-you-can-do';
-import { WhyItWorks } from '@/components/landing/why-it-works';
-import { CommunityStatement } from '@/components/landing/community-statement';
-import { TrustSection } from '@/components/landing/trust-section';
-import { LandingCTA } from '@/components/landing/landing-cta';
-import { LandingFooter } from '@/components/landing/landing-footer';
+import { AboutSection } from '@/components/landing/about-section';
+import { FeatureRows } from '@/components/landing/feature-rows';
+import { Testimonials } from '@/components/landing/testimonials';
+import { CTABand } from '@/components/landing/cta-band';
+import { ContactFooter } from '@/components/landing/contact-footer';
 import { ScrollReveal } from '@/components/landing/scroll-reveal';
 
 export default function LandingPage() {
@@ -17,29 +13,21 @@ export default function LandingPage() {
       <LandingNav />
       <LandingHero />
 
-      <ScrollReveal>
-        <FeatureShowcase />
+      <ScrollReveal section="about">
+        <AboutSection />
       </ScrollReveal>
 
-      <ScrollReveal delay={100}>
-        <WhatYouCanDo />
+      <ScrollReveal delay={100} section="features">
+        <FeatureRows />
       </ScrollReveal>
 
-      <ScrollReveal delay={100}>
-        <WhyItWorks />
+      <ScrollReveal delay={100} section="testimonials">
+        <Testimonials />
       </ScrollReveal>
 
-      <CommunityStatement />
+      <CTABand />
 
-      <ScrollReveal delay={100}>
-        <TrustSection />
-      </ScrollReveal>
-
-      <ScrollReveal>
-        <LandingCTA />
-      </ScrollReveal>
-
-      <LandingFooter />
+      <ContactFooter />
     </div>
   );
 }
