@@ -1,6 +1,6 @@
 -- Auth helper functions in public schema
 -- Supabase restricts writes to the auth schema even via CLI.
--- These are functionally identical to auth.gym_id() etc.
+-- These are functionally identical to public.gym_id() etc.
 
 CREATE OR REPLACE FUNCTION public.get_gym_id()
 RETURNS UUID

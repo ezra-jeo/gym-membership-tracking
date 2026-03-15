@@ -10,7 +10,7 @@
 --    Cached per-statement. Every policy references these
 --    instead of doing a per-row subquery into profiles.
 -- ────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION auth.gym_id()
+CREATE OR REPLACE FUNCTION public.gym_id()
 RETURNS UUID
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = ''
@@ -18,7 +18,7 @@ AS $$
   SELECT gym_id FROM public.profiles WHERE id = auth.uid();
 $$;
 
-CREATE OR REPLACE FUNCTION auth.user_role()
+CREATE OR REPLACE FUNCTION public.get_user_role()
 RETURNS TEXT
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = ''
@@ -27,7 +27,7 @@ AS $$
 $$;
 
 -- Small convenience: is caller a gym manager (admin / owner / staff)?
-CREATE OR REPLACE FUNCTION auth.is_manager()
+CREATE OR REPLACE FUNCTION public.is_manager()
 RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = ''
@@ -150,7 +150,7 @@ CREATE POLICY "gyms_select"
 -- UPDATE: only the gym's owner/admin
 CREATE POLICY "gyms_update"
   ON gyms FOR UPDATE
-  USING (id = auth.gym_id() AND auth.user_role() IN ('owner','admin'));
+  USING (id = public.gym_id() AND public.get_user_role() IN ('owner','admin'));
 
 -- INSERT is handled exclusively by the create_gym_and_owner RPC (SECURITY DEFINER).
 -- No direct insert policy needed; this blocks rogue client-side INSERTs.
@@ -164,7 +164,7 @@ DROP POLICY IF EXISTS "Admins can insert profiles"    ON profiles;
 -- SELECT: see profiles in your gym
 CREATE POLICY "profiles_select"
   ON profiles FOR SELECT
-  USING (gym_id = auth.gym_id());
+  USING (gym_id = public.gym_id());
 
 -- INSERT: user can create their own row (signup flow)
 CREATE POLICY "profiles_insert"
@@ -176,7 +176,7 @@ CREATE POLICY "profiles_update"
   ON profiles FOR UPDATE
   USING (
     auth.uid() = id
-    OR (gym_id = auth.gym_id() AND auth.is_manager())
+    OR (gym_id = public.gym_id() AND public.is_manager())
   );
 
 -- === MEMBERSHIP_PLANS ===
@@ -185,11 +185,11 @@ DROP POLICY IF EXISTS "Admins can manage plans"       ON membership_plans;
 
 CREATE POLICY "plans_select"
   ON membership_plans FOR SELECT
-  USING (gym_id = auth.gym_id());
+  USING (gym_id = public.gym_id());
 
 CREATE POLICY "plans_manage"
   ON membership_plans FOR ALL
-  USING (gym_id = auth.gym_id() AND auth.user_role() IN ('owner','admin'));
+  USING (gym_id = public.gym_id() AND public.get_user_role() IN ('owner','admin'));
 
 -- === MEMBERSHIPS ===
 DROP POLICY IF EXISTS "Members can view own memberships"  ON memberships;
@@ -198,13 +198,13 @@ DROP POLICY IF EXISTS "Staff/admin can manage memberships" ON memberships;
 CREATE POLICY "memberships_select"
   ON memberships FOR SELECT
   USING (
-    gym_id = auth.gym_id()
-    AND (auth.uid() = member_id OR auth.is_manager())
+    gym_id = public.gym_id()
+    AND (auth.uid() = member_id OR public.is_manager())
   );
 
 CREATE POLICY "memberships_manage"
   ON memberships FOR ALL
-  USING (gym_id = auth.gym_id() AND auth.is_manager());
+  USING (gym_id = public.gym_id() AND public.is_manager());
 
 -- === ATTENDANCE ===
 DROP POLICY IF EXISTS "View gym attendance"            ON attendance;
@@ -216,8 +216,8 @@ DROP POLICY IF EXISTS "Staff/admin can update attendance" ON attendance;
 CREATE POLICY "attendance_select"
   ON attendance FOR SELECT
   USING (
-    gym_id = auth.gym_id()
-    AND (auth.uid() = member_id OR auth.is_manager())
+    gym_id = public.gym_id()
+    AND (auth.uid() = member_id OR public.is_manager())
   );
 
 -- INSERT: member checks themselves in, OR a manager (kiosk operator) does it for them.
@@ -226,7 +226,7 @@ CREATE POLICY "attendance_insert"
   ON attendance FOR INSERT
   WITH CHECK (
     (auth.uid() = member_id)
-    OR auth.is_manager()
+    OR public.is_manager()
   );
 
 -- UPDATE (check-out): same rule as insert
@@ -234,7 +234,7 @@ CREATE POLICY "attendance_update"
   ON attendance FOR UPDATE
   USING (
     (auth.uid() = member_id)
-    OR auth.is_manager()
+    OR public.is_manager()
   );
 
 -- === STREAKS ===
@@ -243,11 +243,11 @@ DROP POLICY IF EXISTS "System can manage streaks"     ON streaks;
 
 CREATE POLICY "streaks_select"
   ON streaks FOR SELECT
-  USING (auth.uid() = member_id OR auth.is_manager());
+  USING (auth.uid() = member_id OR public.is_manager());
 
 CREATE POLICY "streaks_manage"
   ON streaks FOR ALL
-  USING (auth.uid() = member_id OR auth.is_manager());
+  USING (auth.uid() = member_id OR public.is_manager());
 
 -- === BADGES ===
 DROP POLICY IF EXISTS "Anyone can view badges"        ON badges;
@@ -257,11 +257,11 @@ DROP POLICY IF EXISTS "Admins can manage badges"      ON badges;
 -- Global (seed) badges have gym_id IS NULL — visible to all authenticated users.
 CREATE POLICY "badges_select"
   ON badges FOR SELECT
-  USING (gym_id IS NULL OR gym_id = auth.gym_id());
+  USING (gym_id IS NULL OR gym_id = public.gym_id());
 
 CREATE POLICY "badges_manage"
   ON badges FOR ALL
-  USING (gym_id = auth.gym_id() AND auth.user_role() IN ('owner','admin'));
+  USING (gym_id = public.gym_id() AND public.get_user_role() IN ('owner','admin'));
 
 -- === MEMBER_BADGES ===
 DROP POLICY IF EXISTS "Anyone can view earned badges"  ON member_badges;
@@ -269,11 +269,11 @@ DROP POLICY IF EXISTS "System can award badges"        ON member_badges;
 
 CREATE POLICY "member_badges_select"
   ON member_badges FOR SELECT
-  USING (auth.uid() = member_id OR auth.is_manager());
+  USING (auth.uid() = member_id OR public.is_manager());
 
 CREATE POLICY "member_badges_insert"
   ON member_badges FOR INSERT
-  WITH CHECK (auth.uid() = member_id OR auth.is_manager());
+  WITH CHECK (auth.uid() = member_id OR public.is_manager());
 
 -- === CHALLENGES ===
 DROP POLICY IF EXISTS "View gym challenges"           ON challenges;
@@ -282,11 +282,11 @@ DROP POLICY IF EXISTS "Admins can manage challenges"  ON challenges;
 
 CREATE POLICY "challenges_select"
   ON challenges FOR SELECT
-  USING (gym_id = auth.gym_id());
+  USING (gym_id = public.gym_id());
 
 CREATE POLICY "challenges_manage"
   ON challenges FOR ALL
-  USING (gym_id = auth.gym_id() AND auth.user_role() IN ('owner','admin'));
+  USING (gym_id = public.gym_id() AND public.get_user_role() IN ('owner','admin'));
 
 -- === CHALLENGE_PARTICIPANTS ===
 DROP POLICY IF EXISTS "Anyone can view challenge participants"  ON challenge_participants;
@@ -295,7 +295,7 @@ DROP POLICY IF EXISTS "System can update challenge progress"    ON challenge_par
 
 CREATE POLICY "cp_select"
   ON challenge_participants FOR SELECT
-  USING (auth.uid() = member_id OR auth.is_manager());
+  USING (auth.uid() = member_id OR public.is_manager());
 
 CREATE POLICY "cp_insert"
   ON challenge_participants FOR INSERT
@@ -303,7 +303,7 @@ CREATE POLICY "cp_insert"
 
 CREATE POLICY "cp_update"
   ON challenge_participants FOR UPDATE
-  USING (auth.uid() = member_id OR auth.is_manager());
+  USING (auth.uid() = member_id OR public.is_manager());
 
 -- === FEED_ITEMS ===
 DROP POLICY IF EXISTS "View gym feed"                 ON feed_items;
@@ -312,11 +312,11 @@ DROP POLICY IF EXISTS "Members can insert own feed items" ON feed_items;
 
 CREATE POLICY "feed_select"
   ON feed_items FOR SELECT
-  USING (gym_id = auth.gym_id());
+  USING (gym_id = public.gym_id());
 
 CREATE POLICY "feed_insert"
   ON feed_items FOR INSERT
-  WITH CHECK (auth.uid() = member_id OR auth.is_manager());
+  WITH CHECK (auth.uid() = member_id OR public.is_manager());
 
 -- === KUDOS ===
 DROP POLICY IF EXISTS "Anyone can view kudos"         ON kudos;
@@ -337,8 +337,8 @@ DROP POLICY IF EXISTS "Admins can manage announcements" ON announcements;
 
 CREATE POLICY "announcements_select"
   ON announcements FOR SELECT
-  USING (gym_id = auth.gym_id());
+  USING (gym_id = public.gym_id());
 
 CREATE POLICY "announcements_manage"
   ON announcements FOR ALL
-  USING (gym_id = auth.gym_id() AND auth.user_role() IN ('owner','admin'));
+  USING (gym_id = public.gym_id() AND public.get_user_role() IN ('owner','admin'));
