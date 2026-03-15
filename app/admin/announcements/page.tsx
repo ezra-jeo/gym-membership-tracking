@@ -3,10 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { A, ACard, EmptyState, GhostBtn, LoadingSkeleton, PageHeader, PrimaryBtn } from '@/lib/admin-ui';
 import { toast } from 'sonner';
 import { Plus, Megaphone, Trash2 } from 'lucide-react';
 
@@ -94,87 +91,75 @@ export default function AdminAnnouncementsPage() {
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-20 rounded-lg animate-pulse bg-muted-foreground/10" />
-        ))}
-      </div>
-    );
+    return <LoadingSkeleton rows={4} h={76} />;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-primary-foreground">Announcements</h2>
-          <p className="text-sm text-muted-foreground">Broadcast messages to all members</p>
-        </div>
-        <Button
-          onClick={() => setShowForm(!showForm)}
-          className="gap-2"
-          style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
-        >
-          <Plus size={16} />
-          New Announcement
-        </Button>
-      </div>
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader
+        title="Announcements"
+        subtitle="Broadcast messages to all members"
+        action={
+          <PrimaryBtn onClick={() => setShowForm(!showForm)}>
+            <Plus size={16} />
+            New Announcement
+          </PrimaryBtn>
+        }
+      />
 
       {showForm && (
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">Create Announcement</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={createAnnouncement} className="space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground">Title</label>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Holiday Hours"
-                  required
-                  className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground">Message</label>
-                <Textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  placeholder="Write your announcement..."
-                  required
-                  rows={4}
-                  className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}>
-                  Post Announcement
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="text-muted-foreground">
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-4" style={{ color: A.text }}>Create Announcement</p>
+          <form onSubmit={createAnnouncement} className="space-y-4">
+            <div>
+              <label className="text-sm" style={{ color: A.text2 }}>Title</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Holiday Hours"
+                required
+                className="mt-1 w-full rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+              />
+            </div>
+            <div>
+              <label className="text-sm" style={{ color: A.text2 }}>Message</label>
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Write your announcement..."
+                required
+                rows={4}
+                className="mt-1 w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+              />
+            </div>
+            <div className="flex gap-2">
+              <PrimaryBtn type="submit">Post Announcement</PrimaryBtn>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="rounded-lg px-3 py-2 text-sm"
+                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text2 }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </ACard>
       )}
 
       {announcements.length === 0 ? (
-        <div className="text-center py-12">
-          <Megaphone size={48} className="mx-auto mb-4 text-muted-foreground" />
-          <p className="text-muted-foreground">No announcements yet.</p>
-        </div>
+        <EmptyState icon={<Megaphone size={40} />} title="No announcements yet" subtitle="Post a message to notify all members." />
       ) : (
         <div className="space-y-3">
           {announcements.map((a) => (
-            <Card key={a.id} className="border-muted-foreground/10 bg-muted-foreground/5">
-              <CardContent className="flex items-start justify-between p-4">
+            <ACard key={a.id} className="p-4">
+              <div className="flex items-start justify-between">
                 <div className="space-y-1">
-                  <p className="font-medium text-primary-foreground">{a.title}</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{a.body}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="font-medium" style={{ color: A.text }}>{a.title}</p>
+                  <p className="text-sm whitespace-pre-wrap" style={{ color: A.text2 }}>{a.body}</p>
+                  <p className="text-xs" style={{ color: A.muted }}>
                     {new Date(a.createdAt).toLocaleDateString('en-US', {
                       weekday: 'short',
                       month: 'short',
@@ -184,16 +169,11 @@ export default function AdminAnnouncementsPage() {
                     })}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteAnnouncement(a.id)}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 shrink-0"
-                >
+                <GhostBtn onClick={() => deleteAnnouncement(a.id)} color={A.danger}>
                   <Trash2 size={16} />
-                </Button>
-              </CardContent>
-            </Card>
+                </GhostBtn>
+              </div>
+            </ACard>
           ))}
         </div>
       )}

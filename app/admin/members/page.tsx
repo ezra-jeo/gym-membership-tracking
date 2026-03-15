@@ -3,35 +3,23 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/lib/auth-context"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+  A,
+  ACard,
+  Avatar,
+  ChoicePicker,
+  EmptyState,
+  GhostBtn,
+  LoadingSkeleton,
+  Modal,
+  PageHeader,
+  PrimaryBtn,
+  SearchInput,
+  StatusPill,
+  SummaryBox,
+} from "@/lib/admin-ui"
 import { toast } from "sonner"
-import { Search, Snowflake, Play, AlertTriangle } from "lucide-react"
+import { Search, Snowflake, Play, AlertTriangle, Users } from "lucide-react"
 
 interface MemberRow {
   profile_id: string
@@ -67,6 +55,7 @@ export default function MembersPage() {
   const [members, setMembers] = useState<MemberRow[]>([])
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [detailOpen, setDetailOpen] = useState(false)
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [selectedPayments, setSelectedPayments] = useState<PaymentRow[]>([])
   const [renewOpen, setRenewOpen] = useState(false)
@@ -75,9 +64,9 @@ export default function MembersPage() {
   const [renewPlanId, setRenewPlanId] = useState("")
   const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
   const [renewLoading, setRenewLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const fetchMembers = useCallback(async () => {
-    // Query profiles as the primary source — RLS filters by gym_id automatically
     const { data: profilesData } = await supabase
       .from("profiles")
       .select("id, name, email, contact_number, created_at")
@@ -85,22 +74,15 @@ export default function MembersPage() {
       .eq("status", "active")
       .order("name")
 
-    // Query memberships separately — RLS filters by gym_id automatically
     const { data: membershipsData } = await supabase
       .from("memberships")
-      .select(
-        "id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)"
-      )
+      .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
       .order("created_at", { ascending: false })
 
-    // Build a map of member_id → latest membership
     const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
     for (const m of membershipsData ?? []) {
       if (!m.member_id) continue
-      // Keep only the latest (first due to ordering) membership per member
-      if (!membershipMap.has(m.member_id)) {
-        membershipMap.set(m.member_id, m)
-      }
+      if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
     }
 
     setMembers(
@@ -112,9 +94,7 @@ export default function MembersPage() {
           email: p.email,
           contact_number: p.contact_number,
           membership_id: m?.id ?? null,
-          plan_name: m
-            ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown")
-            : null,
+          plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
           start_date: m?.start_date ?? null,
           end_date: m?.end_date ?? null,
           membership_status: m?.status ?? null,
@@ -122,11 +102,10 @@ export default function MembersPage() {
         }
       })
     )
+    setIsLoading(false)
   }, [supabase])
 
-  useEffect(() => {
-    fetchMembers()
-  }, [fetchMembers])
+  useEffect(() => { fetchMembers() }, [fetchMembers])
 
   async function fetchPayments(memberId: string) {
     const { data } = await supabase
@@ -134,7 +113,6 @@ export default function MembersPage() {
       .select("id, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
       .eq("member_id", memberId)
       .order("created_at", { ascending: false })
-
     setSelectedPayments(
       (data ?? []).map((p) => ({
         id: p.id,
@@ -148,11 +126,8 @@ export default function MembersPage() {
 
   const filtered = useMemo(() => {
     let list = [...members]
-    if (statusFilter === "no_plan") {
-      list = list.filter((m) => m.membership_status === null)
-    } else if (statusFilter !== "all") {
-      list = list.filter((m) => m.membership_status === statusFilter)
-    }
+    if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
+    else if (statusFilter !== "all") list = list.filter((m) => m.membership_status === statusFilter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
@@ -167,42 +142,11 @@ export default function MembersPage() {
 
   const selectedMember = members.find((m) => m.profile_id === selectedMemberId)
 
-  const statusColor = (s: string | null) => {
-    if (s === "active")
-      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-    if (s === "expired")
-      return "bg-red-500/20 text-red-400 border-red-500/30"
-    if (s === "frozen")
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-    return "bg-muted-foreground/20 text-muted-foreground border-muted-foreground/30"
-  }
-
   async function handleStatusChange(membershipId: string, status: "active" | "frozen") {
-    const { error } = await supabase
-      .from("memberships")
-      .update({ status })
-      .eq("id", membershipId)
-    if (error) {
-      toast.error("Failed to update status")
-      return
-    }
+    const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
+    if (error) { toast.error("Failed to update status"); return }
     toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
     fetchMembers()
-  }
-
-  async function loadRenewPlans() {
-    const { data, error } = await supabase
-      .from("membership_plans")
-      .select("id, name, price, duration_days")
-      .order("price")
-
-    if (error) {
-      toast.error("Failed to load membership plans")
-      return
-    }
-
-    setRenewPlans(data ?? [])
-    setRenewPlanId(data?.[0]?.id ?? "")
   }
 
   async function openRenewDialog(member: MemberRow) {
@@ -211,19 +155,17 @@ export default function MembersPage() {
     setRenewPlans([])
     setRenewPlanId("")
     setRenewOpen(true)
-    await loadRenewPlans()
+    const { data } = await supabase.from("membership_plans").select("id, name, price, duration_days").eq("is_active", true).order("price")
+    setRenewPlans(data ?? [])
+    setRenewPlanId(data?.[0]?.id ?? "")
   }
 
   async function handleRenewMembership() {
     if (!renewMember) return
     const plan = renewPlans.find((p) => p.id === renewPlanId)
-    if (!plan) {
-      toast.error("Please select a membership plan")
-      return
-    }
+    if (!plan) { toast.error("Please select a membership plan"); return }
 
     setRenewLoading(true)
-
     const startDate = new Date()
     const endDate = new Date()
     endDate.setDate(endDate.getDate() + plan.duration_days)
@@ -240,11 +182,7 @@ export default function MembersPage() {
       gym_id: profile?.gymId ?? null,
     })
 
-    if (insertError) {
-      toast.error("Failed to renew: " + insertError.message)
-      setRenewLoading(false)
-      return
-    }
+    if (insertError) { toast.error("Failed to renew: " + insertError.message); setRenewLoading(false); return }
 
     await supabase
       .from("memberships")
@@ -265,376 +203,232 @@ export default function MembersPage() {
 
   const expiredMembers = members.filter((m) => m.membership_status === "expired")
 
+  if (isLoading) {
+    return <LoadingSkeleton rows={6} h={68} />
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Expired alert */}
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader
+        title="Members"
+        subtitle={`${members.length} active member${members.length !== 1 ? "s" : ""}`}
+      />
+
       {expiredMembers.length > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-          <AlertTriangle className="h-5 w-5 text-red-400" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-red-400">
+        <div
+          className="flex items-center gap-3 rounded-lg p-4"
+          style={{ backgroundColor: "var(--admin-expired-bg)", border: "1px solid var(--admin-expired-border)" }}
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0" style={{ color: "var(--admin-expired-text)" }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium" style={{ color: "var(--admin-expired-text)" }}>
               {expiredMembers.length} expired membership{expiredMembers.length > 1 ? "s" : ""}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs truncate" style={{ color: A.text2 }}>
               {expiredMembers.map((m) => m.name).join(", ")}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setStatusFilter("expired")}
-            className="border-red-500/30 bg-transparent text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          >
-            View
-          </Button>
+          <GhostBtn onClick={() => setStatusFilter("expired")} color="var(--admin-expired-text)">View</GhostBtn>
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or contact..."
-            className="border-muted-foreground/20 bg-muted-foreground/5 pl-10 text-primary-foreground placeholder:text-muted-foreground"
-          />
+        <div className="flex-1">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name, email, or contact..." />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40 border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
-            <SelectItem value="all">All Members</SelectItem>
-            <SelectItem value="active">Active Plan</SelectItem>
-            <SelectItem value="expired">Expired</SelectItem>
-            <SelectItem value="frozen">Frozen</SelectItem>
-            <SelectItem value="no_plan">No Plan</SelectItem>
-          </SelectContent>
-        </Select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-lg px-3 py-2 text-sm outline-none"
+          style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text, minWidth: 170 }}
+        >
+          <option value="all">All Members</option>
+          <option value="active">Active Plan</option>
+          <option value="expired">Expired</option>
+          <option value="frozen">Frozen</option>
+          <option value="no_plan">No Plan</option>
+        </select>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-muted-foreground/10 hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Name</TableHead>
-              <TableHead className="text-muted-foreground">Contact</TableHead>
-              <TableHead className="text-muted-foreground">Plan</TableHead>
-              <TableHead className="text-muted-foreground">Start</TableHead>
-              <TableHead className="text-muted-foreground">End</TableHead>
-              <TableHead className="text-muted-foreground">Status</TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  No members found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((m) => {
-                return (
-                  <TableRow
-                    key={m.profile_id}
-                    className="border-muted-foreground/10 hover:bg-muted-foreground/5"
-                  >
-                    <TableCell className="font-medium text-primary-foreground">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedMemberId(m.profile_id)
-                              fetchPayments(m.profile_id)
-                            }}
-                            className="text-left hover:text-primary hover:underline"
-                          >
-                            {m.name}
-                          </button>
-                        </DialogTrigger>
-                        <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-md">
-                          <DialogHeader>
-                            <DialogTitle className="text-primary-foreground">
-                              {selectedMember?.name}
-                            </DialogTitle>
-                          </DialogHeader>
-                          {selectedMember && (
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-2 gap-3 text-sm">
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Email
-                                  </p>
-                                  <p>{selectedMember.email}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Contact
-                                  </p>
-                                  <p>{selectedMember.contact_number ?? "N/A"}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Plan
-                                  </p>
-                                  <p>{selectedMember.plan_name ?? "No plan"}</p>
-                                </div>
-                                {selectedMember.membership_id && (
-                                  <>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Status
-                                      </p>
-                                      <Badge
-                                        variant="outline"
-                                        className={statusColor(
-                                          selectedMember.membership_status
-                                        )}
-                                      >
-                                        {selectedMember.membership_status}
-                                      </Badge>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Start
-                                      </p>
-                                      <p>{selectedMember.start_date}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        End
-                                      </p>
-                                      <p>{selectedMember.end_date}</p>
-                                    </div>
-                                  </>
-                                )}
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Member Since
-                                  </p>
-                                  <p>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "—"}</p>
-                                </div>
-                              </div>
-                              <div>
-                                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                                  Payment History
-                                </p>
-                                {selectedPayments.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    No payments recorded.
-                                  </p>
-                                ) : (
-                                  <div className="max-h-40 space-y-1 overflow-y-auto">
-                                    {selectedPayments.map((p) => (
-                                      <div
-                                        key={p.id}
-                                        className="flex items-center justify-between rounded border border-muted-foreground/10 px-3 py-1.5 text-xs"
-                                      >
-                                        <span>{p.plan_name}</span>
-                                        <span className="flex items-center gap-2">
-                                          <Badge
-                                            variant="outline"
-                                            className="border-muted-foreground/20 text-muted-foreground text-[10px]"
-                                          >
-                                            {p.payment_method}
-                                          </Badge>
-                                          <span className="font-medium">
-                                            {"\u20B1" + p.amount_paid.toLocaleString()}
-                                          </span>
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </DialogContent>
-                      </Dialog>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.contact_number ?? "N/A"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.plan_name ?? <span className="italic">No plan</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.start_date ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.end_date ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={statusColor(m.membership_status)}
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Users size={40} />}
+          title="No members found"
+          subtitle="Try adjusting your search or status filter"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((m) => (
+            <ACard key={m.profile_id} className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <Avatar name={m.name} size={9} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMemberId(m.profile_id)
+                          fetchPayments(m.profile_id)
+                          setDetailOpen(true)
+                        }}
+                        className="font-medium hover:underline text-sm text-left"
+                        style={{ color: A.primary }}
                       >
-                        {m.membership_status ?? "no plan"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openRenewDialog(m)}
-                          className="h-7 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
-                        >
-                          Renew
-                        </Button>
-                        {m.membership_id && m.membership_status === "active" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStatusChange(m.membership_id!, "frozen")}
-                            className="h-7 gap-1 px-2 text-xs text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
-                          >
-                            <Snowflake className="h-3 w-3" />
-                            Freeze
-                          </Button>
-                        )}
-                        {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStatusChange(m.membership_id!, "active")}
-                            className="h-7 gap-1 px-2 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-                          >
-                            <Play className="h-3 w-3" />
-                            Activate
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <Dialog
-        open={renewOpen}
-        onOpenChange={(open) => {
-          setRenewOpen(open)
-          if (!open) {
-            setRenewLoading(false)
-            setRenewMember(null)
-          }
-        }}
-      >
-        <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-primary-foreground">Renew Membership</DialogTitle>
-          </DialogHeader>
-
-          {renewMember && (
-            <div className="space-y-5">
-              <div className="rounded-lg border border-muted-foreground/20 bg-muted-foreground/5 p-4">
-                <p className="text-sm font-medium text-primary-foreground">{renewMember.name}</p>
-                <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <p className="text-muted-foreground">Current Plan</p>
-                    <p className="text-primary-foreground">{renewMember.plan_name ?? "No plan"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Expiry</p>
-                    <p className="text-primary-foreground">{renewMember.end_date ?? "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Status</p>
-                    <Badge variant="outline" className={statusColor(renewMember.membership_status)}>
-                      {renewMember.membership_status ?? "no plan"}
-                    </Badge>
+                        {m.name}
+                      </button>
+                      <StatusPill status={m.membership_status} />
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: A.muted }}>
+                      {m.contact_number ?? m.email}
+                      {m.plan_name && ` · ${m.plan_name}`}
+                      {m.end_date && ` · Exp ${m.end_date}`}
+                    </p>
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Membership Plan</Label>
-                <RadioGroup
-                  value={renewPlanId}
-                  onValueChange={setRenewPlanId}
-                  className="grid grid-cols-1 gap-2"
-                >
-                  {renewPlans.map((plan) => (
-                    <label
-                      key={plan.id}
-                      className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 text-sm transition-colors ${
-                        renewPlanId === plan.id
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                      }`}
-                    >
-                      <div>
-                        <p className="font-medium">{plan.name}</p>
-                        <p className="text-xs">{plan.duration_days} days</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{"\u20B1" + plan.price.toLocaleString()}</span>
-                        <RadioGroupItem value={plan.id} id={`renew-plan-${plan.id}`} />
-                      </div>
-                    </label>
-                  ))}
-                </RadioGroup>
+                <div className="flex items-center gap-1 shrink-0 ml-3">
+                  <GhostBtn onClick={() => openRenewDialog(m)} color={A.primary}>
+                    Renew
+                  </GhostBtn>
+                  {m.membership_id && m.membership_status === "active" && (
+                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "frozen")} color="var(--admin-frozen-text)">
+                      <Snowflake className="h-3 w-3" />
+                      Freeze
+                    </GhostBtn>
+                  )}
+                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && (
+                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "active")} color="var(--admin-active-text)">
+                      <Play className="h-3 w-3" />
+                      Activate
+                    </GhostBtn>
+                  )}
+                </div>
               </div>
+            </ACard>
+          ))}
+        </div>
+      )}
 
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Payment Method</Label>
-                <RadioGroup
-                  value={renewPaymentMethod}
-                  onValueChange={(value) => setRenewPaymentMethod(value as "cash" | "gcash")}
-                  className="grid grid-cols-2 gap-2"
-                >
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
-                      renewPaymentMethod === "cash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="cash" id="renew-payment-cash" />
-                    Cash
-                  </label>
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
-                      renewPaymentMethod === "gcash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="gcash" id="renew-payment-gcash" />
-                    GCash
-                  </label>
-                </RadioGroup>
-              </div>
+      <p className="text-xs" style={{ color: A.muted }}>Showing {filtered.length} of {members.length} members</p>
 
-              <Button
-                onClick={handleRenewMembership}
-                disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {renewLoading ? "Renewing..." : "Renew & Record Payment"}
-              </Button>
+      <Modal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        title={selectedMember?.name ?? "Member Details"}
+        width={560}
+      >
+        {selectedMember && (
+          <div className="space-y-4">
+            <div
+              className="grid grid-cols-2 gap-3 rounded-xl p-4 text-sm"
+              style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
+            >
+              <div><p style={{ color: A.muted }}>Email</p><p style={{ color: A.text }}>{selectedMember.email}</p></div>
+              <div><p style={{ color: A.muted }}>Contact</p><p style={{ color: A.text }}>{selectedMember.contact_number ?? "N/A"}</p></div>
+              <div><p style={{ color: A.muted }}>Plan</p><p style={{ color: A.text }}>{selectedMember.plan_name ?? "No plan"}</p></div>
+              <div><p style={{ color: A.muted }}>Status</p><StatusPill status={selectedMember.membership_status} /></div>
+              <div><p style={{ color: A.muted }}>Start</p><p style={{ color: A.text }}>{selectedMember.start_date ?? "-"}</p></div>
+              <div><p style={{ color: A.muted }}>End</p><p style={{ color: A.text }}>{selectedMember.end_date ?? "-"}</p></div>
+              <div><p style={{ color: A.muted }}>Member Since</p><p style={{ color: A.text }}>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "-"}</p></div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {members.length} members
-      </p>
+            <div>
+              <p className="mb-2 text-xs font-medium" style={{ color: A.muted }}>Payment History</p>
+              {selectedPayments.length === 0 ? (
+                <p className="text-xs" style={{ color: A.muted }}>No payments recorded.</p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {selectedPayments.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between rounded-lg px-3 py-2 text-xs"
+                      style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
+                    >
+                      <span style={{ color: A.text }}>{p.plan_name}</span>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="rounded-full px-2 py-0.5"
+                          style={{
+                            backgroundColor: p.payment_method === "gcash" ? "#EFF6FF" : "#ECFDF3",
+                            color: p.payment_method === "gcash" ? "#2563EB" : "#16A34A",
+                            border: `1px solid ${p.payment_method === "gcash" ? "#BFDBFE" : "#BBF7D0"}`,
+                          }}
+                        >
+                          {p.payment_method}
+                        </span>
+                        <span className="font-semibold" style={{ color: A.text }}>₱{p.amount_paid.toLocaleString()}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={renewOpen}
+        onClose={() => {
+          setRenewOpen(false)
+          setRenewLoading(false)
+          setRenewMember(null)
+        }}
+        title="Renew Membership"
+        width={620}
+      >
+        {renewMember && (
+          <div className="space-y-5">
+            <SummaryBox
+              rows={[
+                { label: "Member", value: renewMember.name },
+                { label: "Current Plan", value: renewMember.plan_name ?? "No plan" },
+                { label: "Expiry", value: renewMember.end_date ?? "-" },
+              ]}
+            />
+
+            <ChoicePicker
+              label="Membership Plan"
+              value={renewPlanId}
+              onChange={setRenewPlanId}
+              options={renewPlans.map((plan) => ({
+                value: plan.id,
+                label: plan.name,
+                sub: `${plan.duration_days} days`,
+                right: `₱${plan.price.toLocaleString()}`,
+              }))}
+            />
+
+            <ChoicePicker
+              label="Payment Method"
+              value={renewPaymentMethod}
+              onChange={(v) => setRenewPaymentMethod(v as "cash" | "gcash")}
+              options={[
+                { value: "cash", label: "Cash" },
+                { value: "gcash", label: "GCash" },
+              ]}
+            />
+
+            {renewPlanId && (
+              <SummaryBox
+                rows={[
+                  { label: "Selected Plan", value: renewPlans.find((p) => p.id === renewPlanId)?.name ?? "-" },
+                  { label: "Method", value: renewPaymentMethod === "cash" ? "Cash" : "GCash" },
+                  { label: "Amount", value: `₱${(renewPlans.find((p) => p.id === renewPlanId)?.price ?? 0).toLocaleString()}` },
+                ]}
+              />
+            )}
+
+            <PrimaryBtn
+              onClick={handleRenewMembership}
+              disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
+            >
+              {renewLoading ? "Renewing..." : "Renew and Record Payment"}
+            </PrimaryBtn>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

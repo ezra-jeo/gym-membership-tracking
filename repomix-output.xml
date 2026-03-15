@@ -49,6 +49,8 @@ app/admin/members/page.tsx
 app/admin/members/pending/page.tsx
 app/admin/page.tsx
 app/admin/payments/page.tsx
+app/admin/plans/page.tsx
+app/admin/promos/page.tsx
 app/admin/reports/page.tsx
 app/globals.css
 app/kiosk/layout.tsx
@@ -295,6 +297,715 @@ This section contains the contents of the repository's files.
 
 [2m  Your machine adds ~15ΓÇô50ms vs Netlify+Supabase in the same region.
   --runs 20  for more stable numbers.   --filter dashboard  to isolate a suite.[0m
+</file>
+
+<file path="app/admin/plans/page.tsx">
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
+import { Plus, Pencil, Trash2, PackageOpen } from 'lucide-react'
+
+interface Plan {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+  description: string | null
+  is_active: boolean | null
+  sort_order: number | null
+}
+
+const EMPTY_FORM = { name: '', price: '', duration_days: '', description: '' }
+
+export default function PlansPage() {
+  const { profile } = useAuth()
+  const supabase = createClient()
+
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { loadPlans() }, [])
+
+  async function loadPlans() {
+    const { data } = await supabase
+      .from('membership_plans')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('price', { ascending: true })
+    setPlans(data ?? [])
+    setIsLoading(false)
+  }
+
+  function openCreate() {
+    setEditId(null)
+    setForm(EMPTY_FORM)
+    setShowForm(true)
+  }
+
+  function openEdit(p: Plan) {
+    setEditId(p.id)
+    setForm({
+      name: p.name,
+      price: String(p.price),
+      duration_days: String(p.duration_days),
+      description: p.description ?? '',
+    })
+    setShowForm(true)
+  }
+
+  function cancel() {
+    setShowForm(false)
+    setEditId(null)
+    setForm(EMPTY_FORM)
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profile?.gymId) return
+    setSaving(true)
+
+    const payload = {
+      name: form.name.trim(),
+      price: parseFloat(form.price),
+      duration_days: parseInt(form.duration_days, 10),
+      description: form.description.trim() || null,
+      gym_id: profile.gymId,
+    }
+
+    if (isNaN(payload.price) || isNaN(payload.duration_days)) {
+      toast.error('Price and duration must be valid numbers')
+      setSaving(false)
+      return
+    }
+
+    const { error } = editId
+      ? await supabase.from('membership_plans').update(payload).eq('id', editId)
+      : await supabase.from('membership_plans').insert(payload)
+
+    if (error) { toast.error('Failed to save plan: ' + error.message); setSaving(false); return }
+    toast.success(editId ? 'Plan updated!' : 'Plan created!')
+    cancel()
+    loadPlans()
+    setSaving(false)
+  }
+
+  async function toggleActive(plan: Plan) {
+    const { error } = await supabase
+      .from('membership_plans')
+      .update({ is_active: !plan.is_active })
+      .eq('id', plan.id)
+    if (error) { toast.error('Failed to update plan'); return }
+    toast.success(plan.is_active ? 'Plan deactivated' : 'Plan activated')
+    loadPlans()
+  }
+
+  async function deletePlan(id: string) {
+    const { error } = await supabase.from('membership_plans').delete().eq('id', id)
+    if (error) { toast.error('Cannot delete — plan may be in use'); return }
+    toast.success('Plan deleted')
+    loadPlans()
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-20 rounded-lg animate-pulse bg-muted-foreground/10" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-primary-foreground">Membership Plans</h2>
+          <p className="text-sm text-muted-foreground">Configure the plans available to your members</p>
+        </div>
+        <Button
+          onClick={openCreate}
+          className="gap-2"
+          style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+        >
+          <Plus size={16} />
+          New Plan
+        </Button>
+      </div>
+
+      {/* Form */}
+      {showForm && (
+        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-primary-foreground">
+              {editId ? 'Edit Plan' : 'Create Plan'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-sm text-muted-foreground">Plan Name</label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. Monthly"
+                    required
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Price (₱)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    placeholder="1500"
+                    required
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Duration (days)</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={form.duration_days}
+                    onChange={(e) => setForm({ ...form, duration_days: e.target.value })}
+                    placeholder="30"
+                    required
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Description (optional)</label>
+                  <Input
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="e.g. Full access, unlimited visits"
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                >
+                  {saving ? 'Saving...' : editId ? 'Save Changes' : 'Create Plan'}
+                </Button>
+                <Button type="button" variant="outline" onClick={cancel} className="text-muted-foreground">
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Plans list */}
+      {plans.length === 0 ? (
+        <div className="text-center py-12">
+          <PackageOpen size={48} className="mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">No membership plans yet.</p>
+          <p className="text-sm text-muted-foreground mt-1">Create your first plan to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {plans.map((plan) => (
+            <Card
+              key={plan.id}
+              className="border-muted-foreground/10 bg-muted-foreground/5"
+              style={{ opacity: plan.is_active ? 1 : 0.5 }}
+            >
+              <CardContent className="flex items-center justify-between p-4">
+                <div className="space-y-0.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-primary-foreground">{plan.name}</p>
+                    {!plan.is_active && (
+                      <span className="text-xs px-1.5 py-0.5 rounded border border-muted-foreground/30 text-muted-foreground">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    ₱{plan.price.toLocaleString()} · {plan.duration_days} days
+                    {plan.description && ` · ${plan.description}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0 ml-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEdit(plan)}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-primary-foreground"
+                  >
+                    <Pencil size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleActive(plan)}
+                    className="h-8 px-2 text-xs text-muted-foreground hover:text-primary-foreground"
+                  >
+                    {plan.is_active ? 'Deactivate' : 'Activate'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deletePlan(plan.id)}
+                    className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+</file>
+
+<file path="app/admin/promos/page.tsx">
+'use client'
+
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
+import { Plus, Trash2, Tag, GraduationCap, UserPlus, Cake, Settings } from 'lucide-react'
+
+type PromoType = 'student_pass' | 'new_member' | 'birthday' | 'custom'
+type DiscountType = 'percent' | 'fixed'
+
+interface Promo {
+  id: string
+  name: string
+  type: PromoType
+  description: string | null
+  discount_type: DiscountType
+  discount_value: number
+  plan_id: string | null
+  valid_from: string | null
+  valid_until: string | null
+  is_active: boolean | null
+}
+
+interface Plan {
+  id: string
+  name: string
+  price: number
+}
+
+const PROMO_PRESETS: Record<PromoType, { label: string; icon: React.ReactNode; description: string; discount_type: DiscountType; discount_value: number }> = {
+  student_pass: {
+    label: 'Student Pass',
+    icon: <GraduationCap size={18} />,
+    description: 'Discounted rate for students with valid school ID',
+    discount_type: 'percent',
+    discount_value: 20,
+  },
+  new_member: {
+    label: 'New Member',
+    icon: <UserPlus size={18} />,
+    description: 'Welcome discount for first-time members',
+    discount_type: 'percent',
+    discount_value: 10,
+  },
+  birthday: {
+    label: 'Birthday Promo',
+    icon: <Cake size={18} />,
+    description: 'Special rate for members celebrating their birthday month',
+    discount_type: 'percent',
+    discount_value: 15,
+  },
+  custom: {
+    label: 'Custom Promo',
+    icon: <Settings size={18} />,
+    description: '',
+    discount_type: 'fixed',
+    discount_value: 0,
+  },
+}
+
+const EMPTY_FORM = {
+  name: '',
+  type: 'custom' as PromoType,
+  description: '',
+  discount_type: 'percent' as DiscountType,
+  discount_value: '',
+  plan_id: '',
+  valid_from: '',
+  valid_until: '',
+}
+
+export default function PromosPage() {
+  const { profile } = useAuth()
+  const supabase = createClient()
+
+  const [promos, setPromos] = useState<Promo[]>([])
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    const [{ data: promosData }, { data: plansData }] = await Promise.all([
+      supabase.from('promos').select('*').order('created_at', { ascending: false }),
+      supabase.from('membership_plans').select('id, name, price').eq('is_active', true).order('price'),
+    ])
+    setPromos(promosData ?? [])
+    setPlans(plansData ?? [])
+    setIsLoading(false)
+  }
+
+  function openPreset(type: PromoType) {
+    const preset = PROMO_PRESETS[type]
+    setForm({
+      ...EMPTY_FORM,
+      name: preset.label,
+      type,
+      description: preset.description,
+      discount_type: preset.discount_type,
+      discount_value: String(preset.discount_value),
+    })
+    setShowForm(true)
+  }
+
+  function cancel() {
+    setShowForm(false)
+    setForm(EMPTY_FORM)
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profile?.gymId) return
+    setSaving(true)
+
+    const discountVal = parseFloat(form.discount_value)
+    if (isNaN(discountVal) || discountVal <= 0) {
+      toast.error('Discount value must be greater than 0')
+      setSaving(false)
+      return
+    }
+
+    const { error } = await supabase.from('promos').insert({
+      gym_id: profile.gymId,
+      name: form.name.trim(),
+      type: form.type,
+      description: form.description.trim() || null,
+      discount_type: form.discount_type,
+      discount_value: discountVal,
+      plan_id: form.plan_id || null,
+      valid_from: form.valid_from || null,
+      valid_until: form.valid_until || null,
+      is_active: true,
+    })
+
+    if (error) { toast.error('Failed to create promo: ' + error.message); setSaving(false); return }
+    toast.success('Promo created!')
+    cancel()
+    loadData()
+    setSaving(false)
+  }
+
+  async function toggleActive(promo: Promo) {
+    const { error } = await supabase
+      .from('promos')
+      .update({ is_active: !promo.is_active })
+      .eq('id', promo.id)
+    if (error) { toast.error('Failed to update promo'); return }
+    toast.success(promo.is_active ? 'Promo deactivated' : 'Promo activated')
+    loadData()
+  }
+
+  async function deletePromo(id: string) {
+    const { error } = await supabase.from('promos').delete().eq('id', id)
+    if (error) { toast.error('Failed to delete promo'); return }
+    toast.success('Promo deleted')
+    loadData()
+  }
+
+  function formatDiscount(promo: Promo) {
+    return promo.discount_type === 'percent'
+      ? `${promo.discount_value}% off`
+      : `₱${promo.discount_value.toLocaleString()} off`
+  }
+
+  const promoIcon = (type: PromoType) => PROMO_PRESETS[type].icon
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-20 rounded-lg animate-pulse bg-muted-foreground/10" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-primary-foreground">Promos & Packages</h2>
+          <p className="text-sm text-muted-foreground">Create discounts and special offers for your members</p>
+        </div>
+        <Button
+          onClick={() => openPreset('custom')}
+          className="gap-2"
+          style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+        >
+          <Plus size={16} />
+          New Promo
+        </Button>
+      </div>
+
+      {/* Quick-add preset buttons */}
+      {!showForm && (
+        <div>
+          <p className="text-xs text-muted-foreground mb-2 uppercase tracking-widest font-medium">Quick add</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(['student_pass', 'new_member', 'birthday', 'custom'] as PromoType[]).map((type) => (
+              <button
+                key={type}
+                onClick={() => openPreset(type)}
+                className="flex items-center gap-2 rounded-lg border border-muted-foreground/20 bg-muted-foreground/5 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary-foreground text-left"
+              >
+                <span style={{ color: 'var(--color-primary)' }}>{PROMO_PRESETS[type].icon}</span>
+                {PROMO_PRESETS[type].label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Form */}
+      {showForm && (
+        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base text-primary-foreground">Create Promo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-sm text-muted-foreground">Promo Name</label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. Student Pass"
+                    required
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Type</label>
+                  <select
+                    value={form.type}
+                    onChange={(e) => setForm({ ...form, type: e.target.value as PromoType })}
+                    className="mt-1 w-full rounded-md border border-muted-foreground/20 bg-foreground px-3 py-2 text-sm text-primary-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="student_pass">Student Pass</option>
+                    <option value="new_member">New Member</option>
+                    <option value="birthday">Birthday Promo</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Discount Type</label>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    {(['percent', 'fixed'] as DiscountType[]).map((dt) => (
+                      <button
+                        key={dt}
+                        type="button"
+                        onClick={() => setForm({ ...form, discount_type: dt })}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          form.discount_type === dt
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40'
+                        }`}
+                      >
+                        {dt === 'percent' ? '% Percent' : '₱ Fixed'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">
+                    Discount Value {form.discount_type === 'percent' ? '(%)' : '(₱)'}
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.discount_value}
+                    onChange={(e) => setForm({ ...form, discount_value: e.target.value })}
+                    placeholder={form.discount_type === 'percent' ? '20' : '200'}
+                    required
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Applies to Plan (optional)</label>
+                  <select
+                    value={form.plan_id}
+                    onChange={(e) => setForm({ ...form, plan_id: e.target.value })}
+                    className="mt-1 w-full rounded-md border border-muted-foreground/20 bg-foreground px-3 py-2 text-sm text-primary-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">All plans</option>
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name} — ₱{p.price.toLocaleString()}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Description (optional)</label>
+                  <Input
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="e.g. Requires valid student ID"
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Valid From (optional)</label>
+                  <Input
+                    type="date"
+                    value={form.valid_from}
+                    onChange={(e) => setForm({ ...form, valid_from: e.target.value })}
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Valid Until (optional)</label>
+                  <Input
+                    type="date"
+                    value={form.valid_until}
+                    onChange={(e) => setForm({ ...form, valid_until: e.target.value })}
+                    className="mt-1 border-muted-foreground/20 bg-foreground text-primary-foreground"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+                >
+                  {saving ? 'Saving...' : 'Create Promo'}
+                </Button>
+                <Button type="button" variant="outline" onClick={cancel} className="text-muted-foreground">
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Promos list */}
+      {promos.length === 0 ? (
+        <div className="text-center py-12">
+          <Tag size={48} className="mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">No promos yet.</p>
+          <p className="text-sm text-muted-foreground mt-1">Use the quick-add buttons above to create your first promo.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {promos.map((promo) => {
+            const plan = plans.find((p) => p.id === promo.plan_id)
+            return (
+              <Card
+                key={promo.id}
+                className="border-muted-foreground/10 bg-muted-foreground/5"
+                style={{ opacity: promo.is_active ? 1 : 0.5 }}
+              >
+                <CardContent className="flex items-center justify-between p-4">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div
+                      className="mt-0.5 shrink-0 rounded-lg p-1.5"
+                      style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
+                    >
+                      {promoIcon(promo.type)}
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-primary-foreground">{promo.name}</p>
+                        <span
+                          className="text-xs px-1.5 py-0.5 rounded font-medium"
+                          style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
+                        >
+                          {formatDiscount(promo)}
+                        </span>
+                        {!promo.is_active && (
+                          <span className="text-xs px-1.5 py-0.5 rounded border border-muted-foreground/30 text-muted-foreground">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {plan ? `Applies to: ${plan.name}` : 'Applies to all plans'}
+                        {promo.valid_until && ` · Expires ${promo.valid_until}`}
+                      </p>
+                      {promo.description && (
+                        <p className="text-xs text-muted-foreground">{promo.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-4">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleActive(promo)}
+                      className="h-8 px-2 text-xs text-muted-foreground hover:text-primary-foreground"
+                    >
+                      {promo.is_active ? 'Deactivate' : 'Activate'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deletePromo(promo.id)}
+                      className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 </file>
 
 <file path="member_benchmark.txt">
@@ -11305,6 +12016,8 @@ export default function AdminDashboard() {
 
 import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/lib/auth-context"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11317,14 +12030,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -11333,7 +12038,7 @@ import {
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
-import { Search, Plus, DollarSign } from "lucide-react"
+import { Search, Plus, CreditCard } from "lucide-react"
 
 interface PaymentRow {
   id: string
@@ -11345,34 +12050,24 @@ interface PaymentRow {
   created_at: string
 }
 
-interface MemberOption {
-  id: string
-  name: string
-}
-
-interface PlanOption {
-  id: string
-  name: string
-  price: number
-  duration_days: number
-}
+interface MemberOption { id: string; name: string }
+interface PlanOption { id: string; name: string; price: number; duration_days: number }
 
 export default function PaymentsPage() {
   const supabase = createClient()
+  const { profile } = useAuth()
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([])
   const [methodFilter, setMethodFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
-
-  // Manual payment form
+  const [isLoading, setIsLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [payMemberId, setPayMemberId] = useState("")
   const [payPlanId, setPayPlanId] = useState("")
   const [payMethod, setPayMethod] = useState<"cash" | "gcash">("cash")
 
   const fetchData = useCallback(async () => {
-    // Fetch memberships as payments
     const { data } = await supabase
       .from("memberships")
       .select("id, member_id, amount_paid, payment_method, created_at, profiles!memberships_member_id_fkey(name), membership_plans!memberships_plan_id_fkey(name)")
@@ -11390,36 +12085,22 @@ export default function PaymentsPage() {
       }))
     )
 
-    // Fetch member options for the dialog
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, name")
-      .order("name")
+    const { data: profiles } = await supabase.from("profiles").select("id, name").eq("role", "member").eq("status", "active").order("name")
     setMemberOptions((profiles ?? []).map((p) => ({ id: p.id, name: p.name })))
 
-    // Fetch plan options
-    const { data: plans } = await supabase
-      .from("membership_plans")
-      .select("id, name, price, duration_days")
+    const { data: plans } = await supabase.from("membership_plans").select("id, name, price, duration_days").eq("is_active", true).order("price")
     setPlanOptions(plans ?? [])
+    setIsLoading(false)
   }, [supabase])
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  useEffect(() => { fetchData() }, [fetchData])
 
   const filtered = useMemo(() => {
     let list = payments
-    if (methodFilter !== "all") {
-      list = list.filter((p) => p.payment_method === methodFilter)
-    }
+    if (methodFilter !== "all") list = list.filter((p) => p.payment_method === methodFilter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
-      list = list.filter(
-        (p) =>
-          p.member_name.toLowerCase().includes(q) ||
-          p.plan_name.toLowerCase().includes(q)
-      )
+      list = list.filter((p) => p.member_name.toLowerCase().includes(q) || p.plan_name.toLowerCase().includes(q))
     }
     return list
   }, [payments, methodFilter, search])
@@ -11427,10 +12108,7 @@ export default function PaymentsPage() {
   const totalFiltered = filtered.reduce((sum, p) => sum + p.amount_paid, 0)
 
   async function handleRecordPayment() {
-    if (!payMemberId || !payPlanId) {
-      toast.error("Please select a member and plan.")
-      return
-    }
+    if (!payMemberId || !payPlanId) { toast.error("Please select a member and plan."); return }
     const plan = planOptions.find((p) => p.id === payPlanId)
     if (!plan) return
 
@@ -11446,12 +12124,10 @@ export default function PaymentsPage() {
       status: "active",
       payment_method: payMethod,
       amount_paid: plan.price,
+      gym_id: profile?.gymId ?? null,
     })
 
-    if (error) {
-      toast.error("Failed to record payment: " + error.message)
-      return
-    }
+    if (error) { toast.error("Failed to record payment: " + error.message); return }
     toast.success("Payment recorded!")
     setDialogOpen(false)
     setPayMemberId("")
@@ -11460,16 +12136,86 @@ export default function PaymentsPage() {
     fetchData()
   }
 
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-16 rounded-lg animate-pulse bg-muted-foreground/10" />
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Filters + add */}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-primary-foreground">Payments</h2>
+          <p className="text-sm text-muted-foreground">All membership payments and renewals</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2" style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}>
+              <Plus size={16} />
+              Record Payment
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-primary-foreground">Record Manual Payment</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-primary-foreground">Member</Label>
+                <Select value={payMemberId} onValueChange={setPayMemberId}>
+                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
+                    <SelectValue placeholder="Select member" />
+                  </SelectTrigger>
+                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground max-h-48">
+                    {memberOptions.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-primary-foreground">Plan</Label>
+                <Select value={payPlanId} onValueChange={setPayPlanId}>
+                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
+                    {planOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} — ₱{p.price.toLocaleString()} ({p.duration_days} days)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-primary-foreground">Payment Method</Label>
+                <RadioGroup value={payMethod} onValueChange={(v) => setPayMethod(v as "cash" | "gcash")} className="grid grid-cols-2 gap-3">
+                  {(["cash", "gcash"] as const).map((method) => (
+                    <label key={method} className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 transition-colors ${payMethod === method ? "border-primary bg-primary/10 text-primary" : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"}`}>
+                      <RadioGroupItem value={method} className="sr-only" />
+                      <span className="text-sm font-medium">{method === "cash" ? "Cash" : "GCash"}</span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
+              <Button onClick={handleRecordPayment} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                Record Payment
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by member or description..."
+            placeholder="Search by member or plan..."
             className="border-muted-foreground/20 bg-muted-foreground/5 pl-10 text-primary-foreground placeholder:text-muted-foreground"
           />
         </div>
@@ -11483,168 +12229,60 @@ export default function PaymentsPage() {
             <SelectItem value="gcash">GCash</SelectItem>
           </SelectContent>
         </Select>
-
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="h-4 w-4" />
-              Record Payment
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-primary-foreground">
-                Record Manual Payment
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Member</Label>
-                <Select value={payMemberId} onValueChange={setPayMemberId}>
-                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-                    <SelectValue placeholder="Select member" />
-                  </SelectTrigger>
-                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground max-h-48">
-                    {memberOptions.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Plan</Label>
-                <Select value={payPlanId} onValueChange={setPayPlanId}>
-                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-                    <SelectValue placeholder="Select plan" />
-                  </SelectTrigger>
-                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
-                    {planOptions.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} - P{p.price.toLocaleString()} ({p.duration_days} days)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">
-                  Payment Method
-                </Label>
-                <RadioGroup
-                  value={payMethod}
-                  onValueChange={(v) => setPayMethod(v as "cash" | "gcash")}
-                  className="grid grid-cols-2 gap-3"
-                >
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 transition-colors ${
-                      payMethod === "cash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="cash" className="sr-only" />
-                    <span className="text-sm font-medium">Cash</span>
-                  </label>
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 transition-colors ${
-                      payMethod === "gcash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="gcash" className="sr-only" />
-                    <span className="text-sm font-medium">GCash</span>
-                  </label>
-                </RadioGroup>
-              </div>
-              <Button
-                onClick={handleRecordPayment}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                Record Payment
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      {/* Summary */}
-      <div className="flex items-center gap-3 rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 p-4">
-        <DollarSign className="h-5 w-5 text-primary" />
-        <div>
-          <p className="text-xs text-muted-foreground">
-            Filtered total ({filtered.length} payments)
-          </p>
-          <p className="text-lg font-bold text-primary-foreground">
-            {"P" + totalFiltered.toLocaleString()}
-          </p>
+      {/* Summary card */}
+      <Card className="border-muted-foreground/10 bg-muted-foreground/5">
+        <CardContent className="flex items-center gap-3 p-4">
+          <CreditCard className="h-5 w-5 text-primary shrink-0" />
+          <div>
+            <p className="text-xs text-muted-foreground">Filtered total ({filtered.length} payments)</p>
+            <p className="text-lg font-bold text-primary-foreground">₱{totalFiltered.toLocaleString()}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment cards */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <CreditCard size={48} className="mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">No payments found.</p>
         </div>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-muted-foreground/10 hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Date</TableHead>
-              <TableHead className="text-muted-foreground">Member</TableHead>
-              <TableHead className="text-muted-foreground">
-                Description
-              </TableHead>
-              <TableHead className="text-muted-foreground">Method</TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                Amount
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  No payments found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className="border-muted-foreground/10 hover:bg-muted-foreground/5"
-                >
-                  <TableCell className="text-muted-foreground">
-                    {p.created_at.split("T")[0]}
-                  </TableCell>
-                  <TableCell className="font-medium text-primary-foreground">
-                    {p.member_name}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.plan_name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        p.payment_method === "gcash"
-                          ? "border-blue-500/30 text-blue-400"
-                          : "border-emerald-500/30 text-emerald-400"
-                      }
-                    >
-                      {p.payment_method}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-medium text-primary-foreground">
-                    {"P" + p.amount_paid.toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((p) => (
+            <Card key={p.id} className="border-muted-foreground/10 bg-muted-foreground/5">
+              <CardContent className="flex items-center justify-between p-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div
+                    className="shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold"
+                    style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
+                  >
+                    {p.member_name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-primary-foreground text-sm">{p.member_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {p.plan_name} · {p.created_at.split("T")[0]}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <Badge
+                    variant="outline"
+                    className={p.payment_method === "gcash" ? "border-blue-500/30 text-blue-400" : "border-emerald-500/30 text-emerald-400"}
+                  >
+                    {p.payment_method}
+                  </Badge>
+                  <span className="font-semibold text-primary-foreground text-sm">
+                    ₱{p.amount_paid.toLocaleString()}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -12121,216 +12759,6 @@ export default function MemberLayout({
       </nav>
     </div>
   );
-}
-</file>
-
-<file path="app/member/page.tsx">
-'use client';
-
-import { useEffect, useState } from 'react';
-import { useAuth } from '@/lib/auth-context';
-import { createClient } from '@/lib/supabase';
-import { Flame, TrendingUp, Clock, Calendar, ChevronRight } from 'lucide-react';
-import Link from 'next/link';
-import type { MemberStats } from '@/lib/types';
-
-export default function MemberHomePage() {
-  const { profile } = useAuth();
-  const [stats, setStats] = useState<MemberStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [recentVisits, setRecentVisits] = useState<{ date: string; duration: number | null }[]>([]);
-
-  useEffect(() => {
-    if (!profile) return;
-    loadStats();
-  }, [profile]);
-
-  async function loadStats() {
-    if (!profile) return;
-    const supabase = createClient();
-
-    const { data, error } = await supabase.rpc('member_home_stats')
-    if (error || !data) { setIsLoading(false); return }
-
-    setStats({
-      totalVisits:         data.total_visits,
-      monthlyVisits:       data.monthly_visits,
-      currentStreak:       data.streak.current_streak,
-      bestStreak:          data.streak.best_streak,
-      avgSessionMinutes:   data.avg_session_minutes,
-      leaderboardRank:     null,
-    })
-
-    setRecentVisits(
-      data.recent_visits.map((r: { date: string; duration_min: number | null }) => ({
-        date:     r.date,
-        duration: r.duration_min,
-      }))
-    )
-
-    setIsLoading(false)
-  }
-
-  if (isLoading || !profile) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-surface)' }} />
-        ))}
-      </div>
-    );
-  }
-
-  const greeting = getGreeting();
-
-  return (
-    <div className="space-y-6">
-      {/* Greeting */}
-      <div>
-        <h1
-          className="text-2xl font-bold"
-          style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
-        >
-          {greeting}, {profile.name.split(' ')[0]}!
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-          Here&apos;s your gym activity overview
-        </p>
-      </div>
-
-      {/* Streak Banner */}
-      {stats && stats.currentStreak > 0 && (
-        <div
-          className="relative overflow-hidden rounded-xl p-5"
-          style={{
-            background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
-            color: 'var(--color-white)',
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Flame size={24} />
-                <span className="text-3xl font-bold">{stats.currentStreak}</span>
-                <span className="text-lg opacity-90">day streak!</span>
-              </div>
-              <p className="text-sm opacity-80">
-                Personal best: {stats.bestStreak} days
-              </p>
-            </div>
-            <div className="text-6xl opacity-20">🔥</div>
-          </div>
-        </div>
-      )}
-
-      {stats && stats.currentStreak === 0 && (
-        <div
-          className="rounded-xl p-5 border"
-          style={{
-            backgroundColor: 'var(--color-warning-bg)',
-            borderColor: 'var(--color-warning)',
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <Flame size={24} style={{ color: 'var(--color-warning)' }} />
-            <div>
-              <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                No active streak
-              </p>
-              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                Check in today to start a new streak!
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-3">
-        <StatCard icon={<Calendar size={20} />} label="This Month" value={stats?.monthlyVisits ?? 0} unit="visits" />
-        <StatCard icon={<TrendingUp size={20} />} label="All Time" value={stats?.totalVisits ?? 0} unit="visits" />
-        <StatCard icon={<Clock size={20} />} label="Avg Session" value={stats?.avgSessionMinutes ?? 0} unit="min" />
-      </div>
-
-      {/* Quick Links */}
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>
-          Quick Access
-        </h2>
-        <QuickLink href="/member/feed" label="Activity Feed" description="See what everyone's up to" />
-        <QuickLink href="/member/leaderboard" label="Leaderboard" description="Monthly rankings" />
-        <QuickLink href="/member/profile" label="My QR Code" description="Show at check-in" />
-      </div>
-
-      {/* Recent Visits */}
-      {recentVisits.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>
-            Recent Visits
-          </h2>
-          <div className="space-y-2">
-            {recentVisits.map((visit, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-3 rounded-lg"
-                style={{ backgroundColor: 'var(--color-white)', border: '1px solid var(--color-surface)' }}
-              >
-                <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                  {new Date(visit.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                </span>
-                <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                  {visit.duration ? `${visit.duration} min` : 'In progress'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value, unit }: { icon: React.ReactNode; label: string; value: number | string; unit: string }) {
-  return (
-    <div
-      className="rounded-xl p-4 border"
-      style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
-    >
-      <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--color-primary)' }}>
-        {icon}
-        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-          {label}
-        </span>
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{value}</span>
-        {unit && <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{unit}</span>}
-      </div>
-    </div>
-  );
-}
-
-function QuickLink({ href, label, description }: { href: string; label: string; description: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center justify-between p-4 rounded-xl border transition-all hover:shadow-sm"
-      style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
-    >
-      <div>
-        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{label}</p>
-        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{description}</p>
-      </div>
-      <ChevronRight size={20} style={{ color: 'var(--color-text-muted)' }} />
-    </Link>
-  );
-}
-
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
 }
 </file>
 
@@ -13514,6 +13942,7 @@ export interface LeaderboardEntry {
 import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/lib/auth-context"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -13527,14 +13956,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -13542,7 +13963,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { Search, Snowflake, Play, AlertTriangle } from "lucide-react"
+import { Search, Snowflake, Play, AlertTriangle, Users } from "lucide-react"
 
 interface MemberRow {
   profile_id: string
@@ -13586,9 +14007,9 @@ export default function MembersPage() {
   const [renewPlanId, setRenewPlanId] = useState("")
   const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
   const [renewLoading, setRenewLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   const fetchMembers = useCallback(async () => {
-    // Query profiles as the primary source — RLS filters by gym_id automatically
     const { data: profilesData } = await supabase
       .from("profiles")
       .select("id, name, email, contact_number, created_at")
@@ -13596,22 +14017,15 @@ export default function MembersPage() {
       .eq("status", "active")
       .order("name")
 
-    // Query memberships separately — RLS filters by gym_id automatically
     const { data: membershipsData } = await supabase
       .from("memberships")
-      .select(
-        "id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)"
-      )
+      .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
       .order("created_at", { ascending: false })
 
-    // Build a map of member_id → latest membership
     const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
     for (const m of membershipsData ?? []) {
       if (!m.member_id) continue
-      // Keep only the latest (first due to ordering) membership per member
-      if (!membershipMap.has(m.member_id)) {
-        membershipMap.set(m.member_id, m)
-      }
+      if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
     }
 
     setMembers(
@@ -13623,9 +14037,7 @@ export default function MembersPage() {
           email: p.email,
           contact_number: p.contact_number,
           membership_id: m?.id ?? null,
-          plan_name: m
-            ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown")
-            : null,
+          plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
           start_date: m?.start_date ?? null,
           end_date: m?.end_date ?? null,
           membership_status: m?.status ?? null,
@@ -13633,11 +14045,10 @@ export default function MembersPage() {
         }
       })
     )
+    setIsLoading(false)
   }, [supabase])
 
-  useEffect(() => {
-    fetchMembers()
-  }, [fetchMembers])
+  useEffect(() => { fetchMembers() }, [fetchMembers])
 
   async function fetchPayments(memberId: string) {
     const { data } = await supabase
@@ -13645,7 +14056,6 @@ export default function MembersPage() {
       .select("id, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
       .eq("member_id", memberId)
       .order("created_at", { ascending: false })
-
     setSelectedPayments(
       (data ?? []).map((p) => ({
         id: p.id,
@@ -13659,11 +14069,8 @@ export default function MembersPage() {
 
   const filtered = useMemo(() => {
     let list = [...members]
-    if (statusFilter === "no_plan") {
-      list = list.filter((m) => m.membership_status === null)
-    } else if (statusFilter !== "all") {
-      list = list.filter((m) => m.membership_status === statusFilter)
-    }
+    if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
+    else if (statusFilter !== "all") list = list.filter((m) => m.membership_status === statusFilter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
@@ -13679,41 +14086,17 @@ export default function MembersPage() {
   const selectedMember = members.find((m) => m.profile_id === selectedMemberId)
 
   const statusColor = (s: string | null) => {
-    if (s === "active")
-      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-    if (s === "expired")
-      return "bg-red-500/20 text-red-400 border-red-500/30"
-    if (s === "frozen")
-      return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+    if (s === "active") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+    if (s === "expired") return "bg-red-500/20 text-red-400 border-red-500/30"
+    if (s === "frozen") return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
     return "bg-muted-foreground/20 text-muted-foreground border-muted-foreground/30"
   }
 
   async function handleStatusChange(membershipId: string, status: "active" | "frozen") {
-    const { error } = await supabase
-      .from("memberships")
-      .update({ status })
-      .eq("id", membershipId)
-    if (error) {
-      toast.error("Failed to update status")
-      return
-    }
+    const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
+    if (error) { toast.error("Failed to update status"); return }
     toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
     fetchMembers()
-  }
-
-  async function loadRenewPlans() {
-    const { data, error } = await supabase
-      .from("membership_plans")
-      .select("id, name, price, duration_days")
-      .order("price")
-
-    if (error) {
-      toast.error("Failed to load membership plans")
-      return
-    }
-
-    setRenewPlans(data ?? [])
-    setRenewPlanId(data?.[0]?.id ?? "")
   }
 
   async function openRenewDialog(member: MemberRow) {
@@ -13722,19 +14105,17 @@ export default function MembersPage() {
     setRenewPlans([])
     setRenewPlanId("")
     setRenewOpen(true)
-    await loadRenewPlans()
+    const { data } = await supabase.from("membership_plans").select("id, name, price, duration_days").eq("is_active", true).order("price")
+    setRenewPlans(data ?? [])
+    setRenewPlanId(data?.[0]?.id ?? "")
   }
 
   async function handleRenewMembership() {
     if (!renewMember) return
     const plan = renewPlans.find((p) => p.id === renewPlanId)
-    if (!plan) {
-      toast.error("Please select a membership plan")
-      return
-    }
+    if (!plan) { toast.error("Please select a membership plan"); return }
 
     setRenewLoading(true)
-
     const startDate = new Date()
     const endDate = new Date()
     endDate.setDate(endDate.getDate() + plan.duration_days)
@@ -13751,11 +14132,7 @@ export default function MembersPage() {
       gym_id: profile?.gymId ?? null,
     })
 
-    if (insertError) {
-      toast.error("Failed to renew: " + insertError.message)
-      setRenewLoading(false)
-      return
-    }
+    if (insertError) { toast.error("Failed to renew: " + insertError.message); setRenewLoading(false); return }
 
     await supabase
       .from("memberships")
@@ -13768,25 +14145,41 @@ export default function MembersPage() {
     setRenewLoading(false)
     setRenewOpen(false)
     setRenewMember(null)
-    setRenewPlans([])
-    setRenewPlanId("")
-    setRenewPaymentMethod("cash")
     fetchMembers()
   }
 
   const expiredMembers = members.filter((m) => m.membership_status === "expired")
 
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-16 rounded-lg animate-pulse bg-muted-foreground/10" />
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-primary-foreground">Members</h2>
+          <p className="text-sm text-muted-foreground">{members.length} active member{members.length !== 1 ? "s" : ""}</p>
+        </div>
+      </div>
+
       {/* Expired alert */}
       {expiredMembers.length > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-          <AlertTriangle className="h-5 w-5 text-red-400" />
-          <div className="flex-1">
+          <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-red-400">
               {expiredMembers.length} expired membership{expiredMembers.length > 1 ? "s" : ""}
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground truncate">
               {expiredMembers.map((m) => m.name).join(", ")}
             </p>
           </div>
@@ -13794,7 +14187,7 @@ export default function MembersPage() {
             variant="outline"
             size="sm"
             onClick={() => setStatusFilter("expired")}
-            className="border-red-500/30 bg-transparent text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            className="border-red-500/30 bg-transparent text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 shrink-0"
           >
             View
           </Button>
@@ -13826,142 +14219,74 @@ export default function MembersPage() {
         </Select>
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-muted-foreground/10 hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Name</TableHead>
-              <TableHead className="text-muted-foreground">Contact</TableHead>
-              <TableHead className="text-muted-foreground">Plan</TableHead>
-              <TableHead className="text-muted-foreground">Start</TableHead>
-              <TableHead className="text-muted-foreground">End</TableHead>
-              <TableHead className="text-muted-foreground">Status</TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  No members found.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((m) => {
-                return (
-                  <TableRow
-                    key={m.profile_id}
-                    className="border-muted-foreground/10 hover:bg-muted-foreground/5"
+      {/* Member cards */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-12">
+          <Users size={48} className="mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">No members found.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((m) => (
+            <Card key={m.profile_id} className="border-muted-foreground/10 bg-muted-foreground/5">
+              <CardContent className="flex items-center justify-between p-4">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  {/* Avatar initial */}
+                  <div
+                    className="shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold"
+                    style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
                   >
-                    <TableCell className="font-medium text-primary-foreground">
+                    {m.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {/* Name + status */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Dialog>
                         <DialogTrigger asChild>
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedMemberId(m.profile_id)
-                              fetchPayments(m.profile_id)
-                            }}
-                            className="text-left hover:text-primary hover:underline"
+                            onClick={() => { setSelectedMemberId(m.profile_id); fetchPayments(m.profile_id) }}
+                            className="font-medium text-primary-foreground hover:text-primary hover:underline text-sm text-left"
                           >
                             {m.name}
                           </button>
                         </DialogTrigger>
                         <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-md">
                           <DialogHeader>
-                            <DialogTitle className="text-primary-foreground">
-                              {selectedMember?.name}
-                            </DialogTitle>
+                            <DialogTitle className="text-primary-foreground">{selectedMember?.name}</DialogTitle>
                           </DialogHeader>
                           {selectedMember && (
                             <div className="space-y-4">
                               <div className="grid grid-cols-2 gap-3 text-sm">
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Email
-                                  </p>
-                                  <p>{selectedMember.email}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Contact
-                                  </p>
-                                  <p>{selectedMember.contact_number ?? "N/A"}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Plan
-                                  </p>
-                                  <p>{selectedMember.plan_name ?? "No plan"}</p>
-                                </div>
+                                <div><p className="text-xs text-muted-foreground">Email</p><p>{selectedMember.email}</p></div>
+                                <div><p className="text-xs text-muted-foreground">Contact</p><p>{selectedMember.contact_number ?? "N/A"}</p></div>
+                                <div><p className="text-xs text-muted-foreground">Plan</p><p>{selectedMember.plan_name ?? "No plan"}</p></div>
                                 {selectedMember.membership_id && (
                                   <>
                                     <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Status
-                                      </p>
-                                      <Badge
-                                        variant="outline"
-                                        className={statusColor(
-                                          selectedMember.membership_status
-                                        )}
-                                      >
+                                      <p className="text-xs text-muted-foreground">Status</p>
+                                      <Badge variant="outline" className={statusColor(selectedMember.membership_status)}>
                                         {selectedMember.membership_status}
                                       </Badge>
                                     </div>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        Start
-                                      </p>
-                                      <p>{selectedMember.start_date}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs text-muted-foreground">
-                                        End
-                                      </p>
-                                      <p>{selectedMember.end_date}</p>
-                                    </div>
+                                    <div><p className="text-xs text-muted-foreground">Start</p><p>{selectedMember.start_date}</p></div>
+                                    <div><p className="text-xs text-muted-foreground">End</p><p>{selectedMember.end_date}</p></div>
                                   </>
                                 )}
-                                <div>
-                                  <p className="text-xs text-muted-foreground">
-                                    Member Since
-                                  </p>
-                                  <p>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "—"}</p>
-                                </div>
+                                <div><p className="text-xs text-muted-foreground">Member Since</p><p>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "—"}</p></div>
                               </div>
                               <div>
-                                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                                  Payment History
-                                </p>
+                                <p className="mb-2 text-xs font-medium text-muted-foreground">Payment History</p>
                                 {selectedPayments.length === 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    No payments recorded.
-                                  </p>
+                                  <p className="text-xs text-muted-foreground">No payments recorded.</p>
                                 ) : (
                                   <div className="max-h-40 space-y-1 overflow-y-auto">
                                     {selectedPayments.map((p) => (
-                                      <div
-                                        key={p.id}
-                                        className="flex items-center justify-between rounded border border-muted-foreground/10 px-3 py-1.5 text-xs"
-                                      >
+                                      <div key={p.id} className="flex items-center justify-between rounded border border-muted-foreground/10 px-3 py-1.5 text-xs">
                                         <span>{p.plan_name}</span>
                                         <span className="flex items-center gap-2">
-                                          <Badge
-                                            variant="outline"
-                                            className="border-muted-foreground/20 text-muted-foreground text-[10px]"
-                                          >
-                                            {p.payment_method}
-                                          </Badge>
-                                          <span className="font-medium">
-                                            {"\u20B1" + p.amount_paid.toLocaleString()}
-                                          </span>
+                                          <Badge variant="outline" className="border-muted-foreground/20 text-muted-foreground text-[10px]">{p.payment_method}</Badge>
+                                          <span className="font-medium">{"₱" + p.amount_paid.toLocaleString()}</span>
                                         </span>
                                       </div>
                                     ))}
@@ -13972,180 +14297,106 @@ export default function MembersPage() {
                           )}
                         </DialogContent>
                       </Dialog>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.contact_number ?? "N/A"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.plan_name ?? <span className="italic">No plan</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.start_date ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.end_date ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={statusColor(m.membership_status)}
-                      >
+                      <Badge variant="outline" className={statusColor(m.membership_status)}>
                         {m.membership_status ?? "no plan"}
                       </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openRenewDialog(m)}
-                          className="h-7 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
-                        >
-                          Renew
-                        </Button>
-                        {m.membership_id && m.membership_status === "active" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStatusChange(m.membership_id!, "frozen")}
-                            className="h-7 gap-1 px-2 text-xs text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
-                          >
-                            <Snowflake className="h-3 w-3" />
-                            Freeze
-                          </Button>
-                        )}
-                        {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleStatusChange(m.membership_id!, "active")}
-                            className="h-7 gap-1 px-2 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-                          >
-                            <Play className="h-3 w-3" />
-                            Activate
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                    </div>
+                    {/* Sub-info */}
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {m.contact_number ?? m.email}
+                      {m.plan_name && ` · ${m.plan_name}`}
+                      {m.end_date && ` · Exp ${m.end_date}`}
+                    </p>
+                  </div>
+                </div>
 
-      <Dialog
-        open={renewOpen}
-        onOpenChange={(open) => {
-          setRenewOpen(open)
-          if (!open) {
-            setRenewLoading(false)
-            setRenewMember(null)
-          }
-        }}
-      >
+                {/* Actions */}
+                <div className="flex items-center gap-1 shrink-0 ml-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openRenewDialog(m)}
+                    className="h-7 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                  >
+                    Renew
+                  </Button>
+                  {m.membership_id && m.membership_status === "active" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleStatusChange(m.membership_id!, "frozen")}
+                      className="h-7 gap-1 px-2 text-xs text-yellow-400 hover:bg-yellow-500/10"
+                    >
+                      <Snowflake className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleStatusChange(m.membership_id!, "active")}
+                      className="h-7 gap-1 px-2 text-xs text-emerald-400 hover:bg-emerald-500/10"
+                    >
+                      <Play className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {members.length} members</p>
+
+      {/* Renew Dialog */}
+      <Dialog open={renewOpen} onOpenChange={(open) => { setRenewOpen(open); if (!open) { setRenewLoading(false); setRenewMember(null) } }}>
         <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-primary-foreground">Renew Membership</DialogTitle>
           </DialogHeader>
-
           {renewMember && (
             <div className="space-y-5">
               <div className="rounded-lg border border-muted-foreground/20 bg-muted-foreground/5 p-4">
                 <p className="text-sm font-medium text-primary-foreground">{renewMember.name}</p>
                 <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <p className="text-muted-foreground">Current Plan</p>
-                    <p className="text-primary-foreground">{renewMember.plan_name ?? "No plan"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Expiry</p>
-                    <p className="text-primary-foreground">{renewMember.end_date ?? "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Status</p>
-                    <Badge variant="outline" className={statusColor(renewMember.membership_status)}>
-                      {renewMember.membership_status ?? "no plan"}
-                    </Badge>
-                  </div>
+                  <div><p className="text-muted-foreground">Current Plan</p><p className="text-primary-foreground">{renewMember.plan_name ?? "No plan"}</p></div>
+                  <div><p className="text-muted-foreground">Expiry</p><p className="text-primary-foreground">{renewMember.end_date ?? "—"}</p></div>
+                  <div><p className="text-muted-foreground">Status</p><Badge variant="outline" className={statusColor(renewMember.membership_status)}>{renewMember.membership_status ?? "no plan"}</Badge></div>
                 </div>
               </div>
-
               <div className="space-y-2">
                 <Label className="text-primary-foreground">Membership Plan</Label>
-                <RadioGroup
-                  value={renewPlanId}
-                  onValueChange={setRenewPlanId}
-                  className="grid grid-cols-1 gap-2"
-                >
+                <RadioGroup value={renewPlanId} onValueChange={setRenewPlanId} className="grid grid-cols-1 gap-2">
                   {renewPlans.map((plan) => (
-                    <label
-                      key={plan.id}
-                      className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 text-sm transition-colors ${
-                        renewPlanId === plan.id
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                      }`}
-                    >
-                      <div>
-                        <p className="font-medium">{plan.name}</p>
-                        <p className="text-xs">{plan.duration_days} days</p>
-                      </div>
+                    <label key={plan.id} className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 text-sm transition-colors ${renewPlanId === plan.id ? "border-primary bg-primary/10 text-primary" : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"}`}>
+                      <div><p className="font-medium">{plan.name}</p><p className="text-xs">{plan.duration_days} days</p></div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{"\u20B1" + plan.price.toLocaleString()}</span>
-                        <RadioGroupItem value={plan.id} id={`renew-plan-${plan.id}`} />
+                        <span className="text-sm font-semibold">{"₱" + plan.price.toLocaleString()}</span>
+                        <RadioGroupItem value={plan.id} />
                       </div>
                     </label>
                   ))}
                 </RadioGroup>
               </div>
-
               <div className="space-y-2">
                 <Label className="text-primary-foreground">Payment Method</Label>
-                <RadioGroup
-                  value={renewPaymentMethod}
-                  onValueChange={(value) => setRenewPaymentMethod(value as "cash" | "gcash")}
-                  className="grid grid-cols-2 gap-2"
-                >
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
-                      renewPaymentMethod === "cash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="cash" id="renew-payment-cash" />
-                    Cash
-                  </label>
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
-                      renewPaymentMethod === "gcash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="gcash" id="renew-payment-gcash" />
-                    GCash
-                  </label>
+                <RadioGroup value={renewPaymentMethod} onValueChange={(v) => setRenewPaymentMethod(v as "cash" | "gcash")} className="grid grid-cols-2 gap-2">
+                  {(["cash", "gcash"] as const).map((method) => (
+                    <label key={method} className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${renewPaymentMethod === method ? "border-primary bg-primary/10 text-primary" : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"}`}>
+                      <RadioGroupItem value={method} className="sr-only" />
+                      {method === "cash" ? "Cash" : "GCash"}
+                    </label>
+                  ))}
                 </RadioGroup>
               </div>
-
-              <Button
-                onClick={handleRenewMembership}
-                disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
+              <Button onClick={handleRenewMembership} disabled={renewLoading || !renewPlanId || renewPlans.length === 0} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                 {renewLoading ? "Renewing..." : "Renew & Record Payment"}
               </Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
-
-      <p className="text-xs text-muted-foreground">
-        Showing {filtered.length} of {members.length} members
-      </p>
     </div>
   )
 }
@@ -14636,6 +14887,402 @@ function isSupportedFeedType(type: string): type is FeedItem['type'] {
 }
 </file>
 
+<file path="app/member/page.tsx">
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/lib/auth-context';
+import { createClient } from '@/lib/supabase';
+import { Flame, TrendingUp, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import Link from 'next/link';
+import type { MemberStats } from '@/lib/types';
+
+// ─── Attendance Calendar ──────────────────────────────────────────────────────
+
+function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
+  const today = new Date();
+  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+
+  const year  = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const monthLabel = viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  // First day of month (0=Sun … 6=Sat) and total days
+  const firstDow   = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Pad leading empty cells so grid aligns with weekday headers
+  const cells: (number | null)[] = [
+    ...Array(firstDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  const todayStr = today.toISOString().split('T')[0];
+
+  function toDateStr(day: number) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function prevMonth() {
+    setViewDate(new Date(year, month - 1, 1));
+  }
+  function nextMonth() {
+    // Don't navigate past current month
+    const next = new Date(year, month + 1, 1);
+    if (next <= new Date(today.getFullYear(), today.getMonth(), 1)) {
+      setViewDate(next);
+    }
+  }
+
+  const isNextDisabled =
+    year === today.getFullYear() && month === today.getMonth();
+
+  return (
+    <div
+      className="rounded-xl p-4 border"
+      style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {monthLabel}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={prevMonth}
+            className="p-1 rounded-md transition-colors hover:bg-gray-100"
+            style={{ color: 'var(--color-text-muted)' }}
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={nextMonth}
+            disabled={isNextDisabled}
+            className="p-1 rounded-md transition-colors hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ color: 'var(--color-text-muted)' }}
+            aria-label="Next month"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Weekday labels */}
+      <div className="grid grid-cols-7 mb-1">
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+          <div
+            key={d}
+            className="text-center text-xs font-medium py-1"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-y-1">
+        {cells.map((day, i) => {
+          if (day === null) {
+            return <div key={`empty-${i}`} />;
+          }
+
+          const dateStr  = toDateStr(day);
+          const visited  = visitedDates.has(dateStr);
+          const isToday  = dateStr === todayStr;
+          const isFuture = dateStr > todayStr;
+
+          return (
+            <div key={dateStr} className="flex items-center justify-center aspect-square">
+              <div
+                className="w-8 h-8 flex items-center justify-center rounded-full text-xs font-medium transition-all"
+                style={{
+                  backgroundColor: visited
+                    ? 'var(--color-primary)'
+                    : isToday
+                    ? 'var(--color-primary-glow)'
+                    : 'transparent',
+                  color: visited
+                    ? 'white'
+                    : isToday
+                    ? 'var(--color-primary)'
+                    : isFuture
+                    ? 'var(--color-text-muted)'
+                    : 'var(--color-text-primary)',
+                  opacity: isFuture ? 0.35 : 1,
+                  fontWeight: isToday ? 700 : undefined,
+                  border: isToday && !visited ? '1.5px solid var(--color-primary)' : 'none',
+                }}
+              >
+                {day}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-surface)' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Visited</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{ border: '1.5px solid var(--color-primary)', backgroundColor: 'var(--color-primary-glow)' }}
+          />
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Today</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default function MemberHomePage() {
+  const { profile } = useAuth();
+  const [stats, setStats] = useState<MemberStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [recentVisits, setRecentVisits] = useState<{ date: string; duration: number | null }[]>([]);
+  const [visitedDates, setVisitedDates] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!profile) return;
+    loadStats();
+  }, [profile]);
+
+  async function loadStats() {
+    if (!profile) return;
+    const supabase = createClient();
+
+    const { data, error } = await supabase.rpc('member_home_stats');
+    if (error || !data) { setIsLoading(false); return; }
+
+    setStats({
+      totalVisits:       data.total_visits,
+      monthlyVisits:     data.monthly_visits,
+      currentStreak:     data.streak?.current_streak ?? 0,
+      bestStreak:        data.streak?.best_streak ?? 0,
+      avgSessionMinutes: data.avg_session_minutes,
+      leaderboardRank:   null,
+    });
+
+    setRecentVisits(
+      (data.recent_visits as { date: string; duration_min: number | null }[]).map((r) => ({
+        date:     r.date,
+        duration: r.duration_min,
+      }))
+    );
+
+    // calendar_dates is an array of "YYYY-MM-DD" strings
+    const dates = (data.calendar_dates as string[]) ?? [];
+    setVisitedDates(new Set(dates));
+
+    setIsLoading(false);
+  }
+
+  if (isLoading || !profile) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="h-24 rounded-xl animate-pulse"
+            style={{ backgroundColor: 'var(--color-surface)' }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const greeting = getGreeting();
+
+  return (
+    <div className="space-y-6">
+
+      {/* Greeting */}
+      <div>
+        <h1
+          className="text-2xl font-bold"
+          style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
+        >
+          {greeting}, {profile.name.split(' ')[0]}!
+        </h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+          Here&apos;s your gym activity overview
+        </p>
+      </div>
+
+      {/* Streak Banner */}
+      {stats && stats.currentStreak > 0 && (
+        <div
+          className="relative overflow-hidden rounded-xl p-5"
+          style={{
+            background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
+            color: 'var(--color-white)',
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Flame size={24} />
+                <span className="text-3xl font-bold">{stats.currentStreak}</span>
+                <span className="text-lg opacity-90">day streak!</span>
+              </div>
+              <p className="text-sm opacity-80">
+                Personal best: {stats.bestStreak} days
+              </p>
+            </div>
+            <div className="text-6xl opacity-20">🔥</div>
+          </div>
+        </div>
+      )}
+
+      {stats && stats.currentStreak === 0 && (
+        <div
+          className="rounded-xl p-5 border"
+          style={{
+            backgroundColor: 'var(--color-warning-bg)',
+            borderColor: 'var(--color-warning)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <Flame size={24} style={{ color: 'var(--color-warning)' }} />
+            <div>
+              <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                No active streak
+              </p>
+              <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                Check in today to start a new streak!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Calendar */}
+      <AttendanceCalendar visitedDates={visitedDates} />
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard
+          icon={<TrendingUp size={18} />}
+          label="All Time"
+          value={stats?.totalVisits ?? 0}
+          unit="visits"
+        />
+        <StatCard
+          icon={<Clock size={18} />}
+          label="Avg Session"
+          value={stats?.avgSessionMinutes ?? 0}
+          unit="min"
+        />
+        <StatCard
+          icon={<Flame size={18} />}
+          label="Best Streak"
+          value={stats?.bestStreak ?? 0}
+          unit="days"
+        />
+      </div>
+
+      {/* Quick Links */}
+      <div className="space-y-2">
+        <h2
+          className="text-sm font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
+          Quick Access
+        </h2>
+        <QuickLink href="/member/feed"        label="Activity Feed"  description="See what everyone's up to" />
+        <QuickLink href="/member/leaderboard" label="Leaderboard"    description="Monthly rankings" />
+        <QuickLink href="/member/profile"     label="My QR Code"     description="Show at check-in" />
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatCard({
+  icon,
+  label,
+  value,
+  unit,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  unit: string;
+}) {
+  return (
+    <div
+      className="rounded-xl p-4 border"
+      style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
+    >
+      <div className="flex items-center gap-1.5 mb-2" style={{ color: 'var(--color-primary)' }}>
+        {icon}
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          {label}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+          {value}
+        </span>
+        {unit && (
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            {unit}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({
+  href,
+  label,
+  description,
+}: {
+  href: string;
+  label: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-between p-4 rounded-xl border transition-all hover:shadow-sm"
+      style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
+    >
+      <div>
+        <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+          {label}
+        </p>
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          {description}
+        </p>
+      </div>
+      <ChevronRight size={20} style={{ color: 'var(--color-text-muted)' }} />
+    </Link>
+  );
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+</file>
+
 <file path="lib/database.types.ts">
 export type Json =
   | string
@@ -14815,25 +15462,34 @@ export type Database = {
       }
       membership_plans: {
         Row: {
+          description: string | null
           duration_days: number
           gym_id: string | null
           id: string
+          is_active: boolean | null
           name: string
           price: number
+          sort_order: number | null
         }
         Insert: {
+          description?: string | null
           duration_days: number
           gym_id?: string | null
           id?: string
+          is_active?: boolean | null
           name: string
           price: number
+          sort_order?: number | null
         }
         Update: {
+          description?: string | null
           duration_days?: number
           gym_id?: string | null
           id?: string
+          is_active?: boolean | null
           name?: string
           price?: number
+          sort_order?: number | null
         }
         Relationships: [
           {
@@ -14949,6 +15605,66 @@ export type Database = {
             columns: ["gym_id"]
             isOneToOne: false
             referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promos: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          discount_type: string
+          discount_value: number
+          gym_id: string
+          id: string
+          is_active: boolean | null
+          name: string
+          plan_id: string | null
+          type: Database["public"]["Enums"]["promo_type"]
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          discount_type: string
+          discount_value: number
+          gym_id: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          plan_id?: string | null
+          type?: Database["public"]["Enums"]["promo_type"]
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          discount_type?: string
+          discount_value?: number
+          gym_id?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          plan_id?: string | null
+          type?: Database["public"]["Enums"]["promo_type"]
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promos_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promos_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "membership_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -15125,8 +15841,9 @@ export type Database = {
             current_streak: number
             best_streak: number
             last_visit_date: string | null
-          }
+          } | null
           recent_visits: { date: string; duration_min: number | null }[]
+          calendar_dates: string[]
         }
       }
 
@@ -15150,6 +15867,7 @@ export type Database = {
       membership_status: "active" | "expired" | "frozen"
       payment_method: "cash" | "gcash"
       profile_status: "pending" | "active" | "rejected"
+      promo_type: "student_pass" | "new_member" | "birthday" | "custom"
       user_role: "member" | "admin" | "staff" | "owner"
     }
     CompositeTypes: {
@@ -15287,6 +16005,7 @@ export const Constants = {
       membership_status: ["active", "expired", "frozen"],
       payment_method: ["cash", "gcash"],
       profile_status: ["pending", "active", "rejected"],
+      promo_type: ["student_pass", "new_member", "birthday", "custom"],
       user_role: ["member", "admin", "staff", "owner"],
     },
   },
@@ -16210,6 +16929,8 @@ import {
   Megaphone,
   UserPlus,
   Monitor,
+  PackageOpen,
+  Tag,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -16217,6 +16938,8 @@ const NAV_ITEMS = [
   { href: '/admin/members',         label: 'Members',       icon: Users },
   { href: '/admin/members/pending', label: 'Pending',       icon: UserPlus },
   { href: '/admin/payments',        label: 'Payments',      icon: CreditCard },
+  { href: '/admin/plans',           label: 'Plans',         icon: PackageOpen },
+  { href: '/admin/promos',          label: 'Promos',        icon: Tag },
   { href: '/admin/announcements',   label: 'Announcements', icon: Megaphone },
   { href: '/admin/reports',         label: 'Reports',       icon: BarChart3 },
   { href: '/kiosk',                 label: 'Kiosk',         icon: Monitor },

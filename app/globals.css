@@ -92,6 +92,27 @@
   --sidebar-accent-foreground: var(--color-primary);
   --sidebar-border: var(--color-graphite);
   --sidebar-ring: var(--color-primary);
+  /* Admin design system tokens */
+  --admin-bg:            #F8F7F5;
+  --admin-surface:       #FFFFFF;
+  --admin-surface-2:     #F3F1EE;
+  --admin-border:        #E8E3DC;
+  --admin-border-focus:  #D4956A;
+  --admin-text:          #1A1A1A;
+  --admin-text-2:        #5A5A5A;
+  --admin-text-muted:    #9A9A9A;
+  --admin-active-bg:     #ECFDF3;
+  --admin-active-text:   #16A34A;
+  --admin-active-border: #BBF7D0;
+  --admin-expired-bg:    #FEF2F2;
+  --admin-expired-text:  #DC2626;
+  --admin-expired-border:#FECACA;
+  --admin-frozen-bg:     #FFFBEB;
+  --admin-frozen-text:   #D97706;
+  --admin-frozen-border: #FDE68A;
+  --admin-noplan-bg:     #F3F1EE;
+  --admin-noplan-text:   #5A5A5A;
+  --admin-noplan-border: #D1C9BE;
 }
 
 .dark {
@@ -143,3 +164,5 @@ body {
   color: var(--color-text-primary);
   background-color: var(--color-background);
 }
+
+

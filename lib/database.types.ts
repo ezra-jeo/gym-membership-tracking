@@ -176,25 +176,34 @@ export type Database = {
       }
       membership_plans: {
         Row: {
+          description: string | null
           duration_days: number
           gym_id: string | null
           id: string
+          is_active: boolean | null
           name: string
           price: number
+          sort_order: number | null
         }
         Insert: {
+          description?: string | null
           duration_days: number
           gym_id?: string | null
           id?: string
+          is_active?: boolean | null
           name: string
           price: number
+          sort_order?: number | null
         }
         Update: {
+          description?: string | null
           duration_days?: number
           gym_id?: string | null
           id?: string
+          is_active?: boolean | null
           name?: string
           price?: number
+          sort_order?: number | null
         }
         Relationships: [
           {
@@ -310,6 +319,66 @@ export type Database = {
             columns: ["gym_id"]
             isOneToOne: false
             referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promos: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          discount_type: string
+          discount_value: number
+          gym_id: string
+          id: string
+          is_active: boolean | null
+          name: string
+          plan_id: string | null
+          type: Database["public"]["Enums"]["promo_type"]
+          valid_from: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          discount_type: string
+          discount_value: number
+          gym_id: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          plan_id?: string | null
+          type?: Database["public"]["Enums"]["promo_type"]
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          discount_type?: string
+          discount_value?: number
+          gym_id?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          plan_id?: string | null
+          type?: Database["public"]["Enums"]["promo_type"]
+          valid_from?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promos_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promos_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "membership_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -486,8 +555,9 @@ export type Database = {
             current_streak: number
             best_streak: number
             last_visit_date: string | null
-          }
+          } | null
           recent_visits: { date: string; duration_min: number | null }[]
+          calendar_dates: string[]
         }
       }
 
@@ -511,6 +581,7 @@ export type Database = {
       membership_status: "active" | "expired" | "frozen"
       payment_method: "cash" | "gcash"
       profile_status: "pending" | "active" | "rejected"
+      promo_type: "student_pass" | "new_member" | "birthday" | "custom"
       user_role: "member" | "admin" | "staff" | "owner"
     }
     CompositeTypes: {
@@ -648,6 +719,7 @@ export const Constants = {
       membership_status: ["active", "expired", "frozen"],
       payment_method: ["cash", "gcash"],
       profile_status: ["pending", "active", "rejected"],
+      promo_type: ["student_pass", "new_member", "birthday", "custom"],
       user_role: ["member", "admin", "staff", "owner"],
     },
   },

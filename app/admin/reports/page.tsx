@@ -2,8 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { A, ACard, PageHeader } from "@/lib/admin-ui"
 import {
   BarChart,
   Bar,
@@ -15,12 +14,35 @@ import {
   LineChart,
   Line,
 } from "recharts"
-import {
-  CalendarDays,
-  Users,
-  DollarSign,
-  ArrowUp,
-} from "lucide-react"
+import { CalendarDays, Users, DollarSign, ArrowUp } from "lucide-react"
+
+function StatCard({
+  icon,
+  label,
+  value,
+  iconBg,
+  iconColor,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string | number
+  iconBg: string
+  iconColor: string
+}) {
+  return (
+    <ACard className="p-4">
+      <div className="flex items-center gap-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: iconBg }}>
+          <span style={{ color: iconColor }}>{icon}</span>
+        </div>
+        <div>
+          <p className="text-xs" style={{ color: A.muted }}>{label}</p>
+          <p className="text-xl font-bold" style={{ color: A.text }}>{value}</p>
+        </div>
+      </div>
+    </ACard>
+  )
+}
 
 export default function ReportsPage() {
   const supabase = useMemo(() => createClient(), [])
@@ -36,7 +58,7 @@ export default function ReportsPage() {
   const [avgDailyVisits, setAvgDailyVisits] = useState("0")
 
   const fetchData = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_reports_data', { p_days: 14 })
+    const { data, error } = await supabase.rpc("admin_reports_data", { p_days: 14 })
     if (error || !data) return
 
     setActiveCount(data.active_count)
@@ -47,14 +69,14 @@ export default function ReportsPage() {
     setPeakHours(data.peak_hours)
     setRevenueByDayOfMonth(data.revenue_by_dom)
     setMethodBreakdown({
-      cashTotal:  data.method_breakdown.cash_total,
-      cashCount:  data.method_breakdown.cash_count,
+      cashTotal: data.method_breakdown.cash_total,
+      cashCount: data.method_breakdown.cash_count,
       gcashTotal: data.method_breakdown.gcash_total,
       gcashCount: data.method_breakdown.gcash_count,
     })
 
     const totalVisits = data.attendance_by_day.reduce((s: number, d: { visits: number }) => s + d.visits, 0)
-    setAvgDailyVisits((totalVisits / data.attendance_by_day.length).toFixed(1))
+    setAvgDailyVisits((totalVisits / Math.max(1, data.attendance_by_day.length)).toFixed(1))
   }, [supabase])
 
   useEffect(() => {
@@ -62,269 +84,167 @@ export default function ReportsPage() {
   }, [fetchData])
 
   return (
-    <div className="space-y-6">
-      {/* Top-level stats */}
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader title="Reports" subtitle="Attendance, revenue, and membership trends" />
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
-              <Users className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Active Members</p>
-              <p className="text-xl font-bold text-primary-foreground">
-                {activeCount}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/15">
-              <Users className="h-5 w-5 text-red-400" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Expired</p>
-              <p className="text-xl font-bold text-primary-foreground">
-                {expiredCount}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15">
-              <DollarSign className="h-5 w-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Month Revenue</p>
-              <p className="text-xl font-bold text-primary-foreground">
-                {"P" + monthRevenue.toLocaleString()}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/15">
-              <CalendarDays className="h-5 w-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Avg Daily Visits</p>
-              <p className="text-xl font-bold text-primary-foreground">
-                {avgDailyVisits}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          icon={<Users className="h-5 w-5" />}
+          label="Active Members"
+          value={activeCount}
+          iconBg="rgba(212,149,106,0.15)"
+          iconColor="var(--color-primary)"
+        />
+        <StatCard
+          icon={<Users className="h-5 w-5" />}
+          label="Expired"
+          value={expiredCount}
+          iconBg="var(--admin-expired-bg)"
+          iconColor="var(--admin-expired-text)"
+        />
+        <StatCard
+          icon={<DollarSign className="h-5 w-5" />}
+          label="Month Revenue"
+          value={`₱${monthRevenue.toLocaleString()}`}
+          iconBg="rgba(42,157,143,0.15)"
+          iconColor="#2A9D8F"
+        />
+        <StatCard
+          icon={<CalendarDays className="h-5 w-5" />}
+          label="Avg Daily Visits"
+          value={avgDailyVisits}
+          iconBg="rgba(48,88,58,0.16)"
+          iconColor="var(--admin-active-text)"
+        />
       </div>
 
-      {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">
-              Attendance (Last 14 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attendanceData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(0 0% 25%)"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis
-                    tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(0 0% 12%)",
-                      border: "1px solid hsl(0 0% 20%)",
-                      borderRadius: "8px",
-                      color: "hsl(0 0% 90%)",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="visits"
-                    stroke="hsl(22 100% 55%)"
-                    strokeWidth={2}
-                    dot={{ fill: "hsl(22 100% 55%)", r: 3 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Attendance (Last 14 Days)</p>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={attendanceData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={A.border} />
+                <XAxis dataKey="date" tick={{ fill: A.muted, fontSize: 11 }} interval="preserveStartEnd" axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
+                <YAxis tick={{ fill: A.muted, fontSize: 11 }} allowDecimals={false} axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    color: "#111827",
+                  }}
+                  labelStyle={{ color: "#111827" }}
+                  itemStyle={{ color: "#111827" }}
+                  cursor={{ fill: "#f3f4f6" }}
+                />
+                <Line type="monotone" dataKey="visits" stroke="#D4956A" strokeWidth={2.5} dot={{ fill: "#D4956A", r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </ACard>
 
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">
-              Revenue (Last 14 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="hsl(0 0% 25%)"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }}
-                    interval="preserveStartEnd"
-                  />
-                  <YAxis tick={{ fill: "hsl(0 0% 60%)", fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(0 0% 12%)",
-                      border: "1px solid hsl(0 0% 20%)",
-                      borderRadius: "8px",
-                      color: "hsl(0 0% 90%)",
-                    }}
-                    formatter={(value: number) => [
-                      "P" + value.toLocaleString(),
-                      "Revenue",
-                    ]}
-                  />
-                  <Bar
-                    dataKey="revenue"
-                    fill="hsl(173 58% 39%)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Revenue (Last 14 Days)</p>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revenueData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={A.border} />
+                <XAxis dataKey="date" tick={{ fill: A.muted, fontSize: 11 }} interval="preserveStartEnd" axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
+                <YAxis tick={{ fill: A.muted, fontSize: 11 }} axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "8px",
+                    color: "#111827",
+                  }}
+                  labelStyle={{ color: "#111827" }}
+                  itemStyle={{ color: "#111827" }}
+                  cursor={{ fill: "#f3f4f6" }}
+                  formatter={(value: number) => [`₱${value.toLocaleString()}`, "Revenue"]}
+                />
+                <Bar dataKey="revenue" fill="#2A9D8F" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ACard>
       </div>
 
-      {/* Peak hours + best days + payment method */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">
-              Peak Hours
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {peakHours.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not enough data yet.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {peakHours.map((h, i) => (
-                  <div
-                    key={h.hour}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      {i === 0 && (
-                        <ArrowUp className="h-3 w-3 text-primary" />
-                      )}
-                      <span className="text-sm text-primary-foreground">
-                        {h.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-2 rounded-full bg-primary"
-                        style={{
-                          width: `${Math.max(20, (h.count / (peakHours[0]?.count || 1)) * 100)}px`,
-                        }}
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {h.count}
-                      </span>
-                    </div>
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Peak Hours</p>
+          {peakHours.length === 0 ? (
+            <p className="text-sm" style={{ color: A.muted }}>Not enough data yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {peakHours.map((h, i) => (
+                <div key={h.hour} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {i === 0 && <ArrowUp className="h-3 w-3" style={{ color: "var(--color-primary)" }} />}
+                    <span className="text-sm" style={{ color: A.text }}>{h.label}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">
-              Best Revenue Days (of month)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {revenueByDayOfMonth.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not enough data yet.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {revenueByDayOfMonth.map((d, i) => (
-                  <div
-                    key={d.day}
-                    className="flex items-center justify-between"
-                  >
-                    <span className="text-sm text-primary-foreground">
-                      {"Day " + d.day}
-                    </span>
-                    <span className="text-sm font-medium text-primary">
-                      {"P" + d.amount.toLocaleString()}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="h-2 rounded-full"
+                      style={{
+                        width: `${Math.max(20, (h.count / (peakHours[0]?.count || 1)) * 100)}px`,
+                        backgroundColor: "var(--color-primary)",
+                      }}
+                    />
+                    <span className="text-xs" style={{ color: A.muted }}>{h.count}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted-foreground/10 bg-muted-foreground/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-primary-foreground">
-              Payment Methods
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="rounded-md border border-muted-foreground/10 bg-foreground p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Cash</span>
-                  <Badge
-                    variant="outline"
-                    className="border-emerald-500/30 text-emerald-400"
-                  >
-                    {methodBreakdown.cashCount} payments
-                  </Badge>
                 </div>
-                <p className="mt-1 text-lg font-bold text-primary-foreground">
-                  {"P" + methodBreakdown.cashTotal.toLocaleString()}
-                </p>
-              </div>
-              <div className="rounded-md border border-muted-foreground/10 bg-foreground p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">GCash</span>
-                  <Badge
-                    variant="outline"
-                    className="border-blue-500/30 text-blue-400"
-                  >
-                    {methodBreakdown.gcashCount} payments
-                  </Badge>
-                </div>
-                <p className="mt-1 text-lg font-bold text-primary-foreground">
-                  {"P" + methodBreakdown.gcashTotal.toLocaleString()}
-                </p>
-              </div>
+              ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </ACard>
+
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Best Revenue Days</p>
+          {revenueByDayOfMonth.length === 0 ? (
+            <p className="text-sm" style={{ color: A.muted }}>Not enough data yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {revenueByDayOfMonth.map((d) => (
+                <div key={d.day} className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: A.text }}>{`Day ${d.day}`}</span>
+                  <span className="text-sm font-semibold" style={{ color: "var(--color-primary)" }}>{`₱${d.amount.toLocaleString()}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </ACard>
+
+        <ACard className="p-4">
+          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Payment Methods</p>
+          <div className="space-y-4">
+            <div className="rounded-xl p-3" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: A.text2 }}>Cash</span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: "var(--admin-active-bg)", color: "var(--admin-active-text)", border: "1px solid var(--admin-active-border)" }}
+                >
+                  {methodBreakdown.cashCount} payments
+                </span>
+              </div>
+              <p className="mt-1 text-lg font-bold" style={{ color: A.text }}>{`₱${methodBreakdown.cashTotal.toLocaleString()}`}</p>
+            </div>
+            <div className="rounded-xl p-3" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm" style={{ color: A.text2 }}>GCash</span>
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: "rgba(42,157,143,0.15)", color: "#2A9D8F", border: "1px solid rgba(42,157,143,0.28)" }}
+                >
+                  {methodBreakdown.gcashCount} payments
+                </span>
+              </div>
+              <p className="mt-1 text-lg font-bold" style={{ color: A.text }}>{`₱${methodBreakdown.gcashTotal.toLocaleString()}`}</p>
+            </div>
+          </div>
+        </ACard>
       </div>
     </div>
   )

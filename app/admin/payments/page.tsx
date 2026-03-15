@@ -2,35 +2,22 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
+import { useAuth } from "@/lib/auth-context"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+  A,
+  ACard,
+  Avatar,
+  ChoicePicker,
+  EmptyState,
+  LoadingSkeleton,
+  Modal,
+  PageHeader,
+  PrimaryBtn,
+  SearchInput,
+  SummaryBox,
+} from "@/lib/admin-ui"
 import { toast } from "sonner"
-import { Search, Plus, DollarSign } from "lucide-react"
+import { Search, Plus, CreditCard, Check, X } from "lucide-react"
 
 interface PaymentRow {
   id: string
@@ -42,38 +29,34 @@ interface PaymentRow {
   created_at: string
 }
 
-interface MemberOption {
-  id: string
-  name: string
-}
-
-interface PlanOption {
-  id: string
-  name: string
-  price: number
-  duration_days: number
-}
+interface MemberOption { id: string; name: string; contact_number: string | null }
+interface PlanOption { id: string; name: string; price: number; duration_days: number; description: string | null }
 
 export default function PaymentsPage() {
   const supabase = createClient()
+  const { profile } = useAuth()
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([])
   const [methodFilter, setMethodFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-  // Manual payment form
+  // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [payMemberId, setPayMemberId] = useState("")
-  const [payPlanId, setPayPlanId] = useState("")
+  const [memberSearch, setMemberSearch] = useState("")
+  const [selectedMember, setSelectedMember] = useState<MemberOption | null>(null)
+  const [selectedPlanId, setSelectedPlanId] = useState("")
   const [payMethod, setPayMethod] = useState<"cash" | "gcash">("cash")
 
   const fetchData = useCallback(async () => {
-    // Fetch memberships as payments
-    const { data } = await supabase
+    const { data, error: paymentsError } = await supabase
       .from("memberships")
       .select("id, member_id, amount_paid, payment_method, created_at, profiles!memberships_member_id_fkey(name), membership_plans!memberships_plan_id_fkey(name)")
       .order("created_at", { ascending: false })
+
+    if (paymentsError) console.error("payments fetch error:", paymentsError)
 
     setPayments(
       (data ?? []).map((p) => ({
@@ -87,35 +70,95 @@ export default function PaymentsPage() {
       }))
     )
 
-    // Fetch member options for the dialog
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, name")
+      .select("id, name, contact_number")
+      .eq("role", "member")
+      .eq("status", "active")
       .order("name")
-    setMemberOptions((profiles ?? []).map((p) => ({ id: p.id, name: p.name })))
+    setMemberOptions(profiles ?? [])
 
-    // Fetch plan options
     const { data: plans } = await supabase
       .from("membership_plans")
-      .select("id, name, price, duration_days")
+      .select("id, name, price, duration_days, description")
+      .order("price")
     setPlanOptions(plans ?? [])
+    setIsLoading(false)
   }, [supabase])
 
-  useEffect(() => {
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const filteredMembers = useMemo(() => {
+    if (!memberSearch.trim()) return memberOptions
+    const q = memberSearch.toLowerCase()
+    return memberOptions.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        (m.contact_number && m.contact_number.includes(q))
+    )
+  }, [memberOptions, memberSearch])
+
+  const selectedPlan = planOptions.find((p) => p.id === selectedPlanId)
+
+  function resetDialog() {
+    setMemberSearch("")
+    setSelectedMember(null)
+    setSelectedPlanId("")
+    setPayMethod("cash")
+    setSaving(false)
+  }
+
+  async function handleRecordPayment() {
+    if (!selectedMember) { toast.error("Please select a member"); return }
+    if (!selectedPlanId || !selectedPlan) { toast.error("Please select a plan"); return }
+
+    setSaving(true)
+
+    const startDate = new Date()
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + selectedPlan.duration_days)
+    const startDateStr = startDate.toISOString().split("T")[0]
+    const endDateStr = endDate.toISOString().split("T")[0]
+
+    const { error } = await supabase.from("memberships").insert({
+      member_id: selectedMember.id,
+      plan_id: selectedPlanId,
+      start_date: startDateStr,
+      end_date: endDateStr,
+      status: "active",
+      payment_method: payMethod,
+      amount_paid: selectedPlan.price,
+      gym_id: profile?.gymId ?? null,
+    })
+
+    if (error) {
+      console.error("insert error:", error)
+      toast.error("Failed to record payment: " + error.message)
+      setSaving(false)
+      return
+    }
+
+    // Expire any previous active membership for this member
+    await supabase
+      .from("memberships")
+      .update({ status: "expired" })
+      .eq("member_id", selectedMember.id)
+      .eq("status", "active")
+      .neq("start_date", startDateStr)
+
+    toast.success(`Payment recorded for ${selectedMember.name}!`)
+    setDialogOpen(false)
+    resetDialog()
     fetchData()
-  }, [fetchData])
+  }
 
   const filtered = useMemo(() => {
     let list = payments
-    if (methodFilter !== "all") {
-      list = list.filter((p) => p.payment_method === methodFilter)
-    }
+    if (methodFilter !== "all") list = list.filter((p) => p.payment_method === methodFilter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
-        (p) =>
-          p.member_name.toLowerCase().includes(q) ||
-          p.plan_name.toLowerCase().includes(q)
+        (p) => p.member_name.toLowerCase().includes(q) || p.plan_name.toLowerCase().includes(q)
       )
     }
     return list
@@ -123,225 +166,200 @@ export default function PaymentsPage() {
 
   const totalFiltered = filtered.reduce((sum, p) => sum + p.amount_paid, 0)
 
-  async function handleRecordPayment() {
-    if (!payMemberId || !payPlanId) {
-      toast.error("Please select a member and plan.")
-      return
-    }
-    const plan = planOptions.find((p) => p.id === payPlanId)
-    if (!plan) return
-
-    const startDate = new Date()
-    const endDate = new Date()
-    endDate.setDate(endDate.getDate() + plan.duration_days)
-
-    const { error } = await supabase.from("memberships").insert({
-      member_id: payMemberId,
-      plan_id: payPlanId,
-      start_date: startDate.toISOString().split("T")[0],
-      end_date: endDate.toISOString().split("T")[0],
-      status: "active",
-      payment_method: payMethod,
-      amount_paid: plan.price,
-    })
-
-    if (error) {
-      toast.error("Failed to record payment: " + error.message)
-      return
-    }
-    toast.success("Payment recorded!")
-    setDialogOpen(false)
-    setPayMemberId("")
-    setPayPlanId("")
-    setPayMethod("cash")
-    fetchData()
+  if (isLoading) {
+    return <LoadingSkeleton rows={5} h={72} />
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filters + add */}
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader
+        title="Payments"
+        subtitle="All membership payments and renewals"
+        action={
+          <PrimaryBtn onClick={() => setDialogOpen(true)}>
+            <Plus size={16} />
+            Record Payment
+          </PrimaryBtn>
+        }
+      />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by member or description..."
-            className="border-muted-foreground/20 bg-muted-foreground/5 pl-10 text-primary-foreground placeholder:text-muted-foreground"
-          />
+        <div className="flex-1">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by member or plan..." />
         </div>
-        <Select value={methodFilter} onValueChange={setMethodFilter}>
-          <SelectTrigger className="w-36 border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
-            <SelectItem value="all">All Methods</SelectItem>
-            <SelectItem value="cash">Cash</SelectItem>
-            <SelectItem value="gcash">GCash</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="h-4 w-4" />
-              Record Payment
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-primary-foreground">
-                Record Manual Payment
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Member</Label>
-                <Select value={payMemberId} onValueChange={setPayMemberId}>
-                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-                    <SelectValue placeholder="Select member" />
-                  </SelectTrigger>
-                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground max-h-48">
-                    {memberOptions.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">Plan</Label>
-                <Select value={payPlanId} onValueChange={setPayPlanId}>
-                  <SelectTrigger className="border-muted-foreground/20 bg-muted-foreground/5 text-primary-foreground">
-                    <SelectValue placeholder="Select plan" />
-                  </SelectTrigger>
-                  <SelectContent className="border-muted-foreground/20 bg-foreground text-primary-foreground">
-                    {planOptions.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} - P{p.price.toLocaleString()} ({p.duration_days} days)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-primary-foreground">
-                  Payment Method
-                </Label>
-                <RadioGroup
-                  value={payMethod}
-                  onValueChange={(v) => setPayMethod(v as "cash" | "gcash")}
-                  className="grid grid-cols-2 gap-3"
-                >
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 transition-colors ${
-                      payMethod === "cash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="cash" className="sr-only" />
-                    <span className="text-sm font-medium">Cash</span>
-                  </label>
-                  <label
-                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 transition-colors ${
-                      payMethod === "gcash"
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <RadioGroupItem value="gcash" className="sr-only" />
-                    <span className="text-sm font-medium">GCash</span>
-                  </label>
-                </RadioGroup>
-              </div>
-              <Button
-                onClick={handleRecordPayment}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                Record Payment
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <select
+          value={methodFilter}
+          onChange={(e) => setMethodFilter(e.target.value)}
+          className="rounded-lg px-3 py-2 text-sm outline-none"
+          style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text, minWidth: 150 }}
+        >
+          <option value="all">All Methods</option>
+          <option value="cash">Cash</option>
+          <option value="gcash">GCash</option>
+        </select>
       </div>
 
-      {/* Summary */}
-      <div className="flex items-center gap-3 rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 p-4">
-        <DollarSign className="h-5 w-5 text-primary" />
+      <ACard className="p-4">
+        <div className="flex items-center gap-3">
+          <CreditCard className="h-5 w-5 shrink-0" style={{ color: A.primary }} />
         <div>
-          <p className="text-xs text-muted-foreground">
-            Filtered total ({filtered.length} payments)
-          </p>
-          <p className="text-lg font-bold text-primary-foreground">
-            {"P" + totalFiltered.toLocaleString()}
-          </p>
+            <p className="text-xs" style={{ color: A.muted }}>Filtered total ({filtered.length} payments)</p>
+            <p className="text-lg font-bold" style={{ color: A.text }}>₱{totalFiltered.toLocaleString()}</p>
+          </div>
         </div>
-      </div>
+      </ACard>
 
-      {/* Table */}
-      <div className="rounded-lg border border-muted-foreground/10 bg-muted-foreground/5 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-muted-foreground/10 hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Date</TableHead>
-              <TableHead className="text-muted-foreground">Member</TableHead>
-              <TableHead className="text-muted-foreground">
-                Description
-              </TableHead>
-              <TableHead className="text-muted-foreground">Method</TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                Amount
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-8 text-center text-muted-foreground"
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<CreditCard size={40} />}
+          title="No payments found"
+          subtitle="Record your first payment to populate this list"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((p) => (
+            <ACard key={p.id} className="p-4">
+              <div className="flex items-center justify-between rounded-lg">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <Avatar name={p.member_name} size={9} />
+                <div className="min-w-0">
+                  <p className="font-medium text-sm" style={{ color: A.text }}>{p.member_name}</p>
+                  <p className="text-xs" style={{ color: A.muted }}>
+                    {p.plan_name} · {p.created_at.split("T")[0]}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <span
+                  className="rounded-full px-2 py-0.5 text-xs font-medium"
+                  style={{
+                    backgroundColor: p.payment_method === "gcash" ? "#EFF6FF" : "#ECFDF3",
+                    color: p.payment_method === "gcash" ? "#2563EB" : "#16A34A",
+                    border: `1px solid ${p.payment_method === "gcash" ? "#BFDBFE" : "#BBF7D0"}`,
+                  }}
                 >
-                  No payments found.
-                </TableCell>
-              </TableRow>
+                  {p.payment_method}
+                </span>
+                <span className="font-semibold text-sm" style={{ color: A.text }}>
+                  ₱{p.amount_paid.toLocaleString()}
+                </span>
+              </div>
+              </div>
+            </ACard>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        open={dialogOpen}
+        onClose={() => {
+          setDialogOpen(false)
+          resetDialog()
+        }}
+        title="Record Payment"
+        width={640}
+      >
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium" style={{ color: A.text2 }}>Member</p>
+
+            {selectedMember ? (
+              <div className="flex items-center justify-between rounded-lg px-4 py-3" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: A.text }}>{selectedMember.name}</p>
+                  {selectedMember.contact_number && (
+                    <p className="text-xs" style={{ color: A.muted }}>{selectedMember.contact_number}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMember(null)
+                    setMemberSearch("")
+                  }}
+                  className="rounded p-1 transition-colors hover:bg-black/5"
+                  style={{ color: A.muted }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
             ) : (
-              filtered.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className="border-muted-foreground/10 hover:bg-muted-foreground/5"
-                >
-                  <TableCell className="text-muted-foreground">
-                    {p.created_at.split("T")[0]}
-                  </TableCell>
-                  <TableCell className="font-medium text-primary-foreground">
-                    {p.member_name}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.plan_name}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        p.payment_method === "gcash"
-                          ? "border-blue-500/30 text-blue-400"
-                          : "border-emerald-500/30 text-emerald-400"
-                      }
-                    >
-                      {p.payment_method}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-medium text-primary-foreground">
-                    {"P" + p.amount_paid.toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: A.muted }} />
+                  <input
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    placeholder="Search by name or contact..."
+                    className="w-full rounded-lg py-2 pl-9 pr-3 text-sm outline-none"
+                    style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+                  />
+                </div>
+
+                {memberSearch.trim() && (
+                  <div className="max-h-44 overflow-y-auto rounded-lg" style={{ backgroundColor: A.surface, border: `1px solid ${A.border}` }}>
+                    {filteredMembers.length === 0 ? (
+                      <p className="px-3 py-3 text-sm" style={{ color: A.muted }}>No members found</p>
+                    ) : (
+                      filteredMembers.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMember(m)
+                            setMemberSearch("")
+                          }}
+                          className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-black/5"
+                        >
+                          <span style={{ color: A.text }}>{m.name}</span>
+                          {m.contact_number && <span style={{ color: A.muted }}>{m.contact_number}</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             )}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+
+          <ChoicePicker
+            label="Membership Plan"
+            value={selectedPlanId}
+            onChange={setSelectedPlanId}
+            options={planOptions.map((plan) => ({
+              value: plan.id,
+              label: plan.name,
+              sub: `${plan.duration_days} days${plan.description ? ` · ${plan.description}` : ""}`,
+              right: `₱${plan.price.toLocaleString()}`,
+            }))}
+          />
+
+          <ChoicePicker
+            label="Payment Method"
+            value={payMethod}
+            onChange={(v) => setPayMethod(v as "cash" | "gcash")}
+            options={[
+              { value: "cash", label: "Cash" },
+              { value: "gcash", label: "GCash" },
+            ]}
+          />
+
+          {selectedMember && selectedPlan && (
+            <SummaryBox
+              rows={[
+                { label: "Member", value: selectedMember.name },
+                { label: "Plan", value: `${selectedPlan.name} (${selectedPlan.duration_days}d)` },
+                { label: "Method", value: payMethod === "cash" ? "Cash" : "GCash" },
+                { label: "Total", value: `₱${selectedPlan.price.toLocaleString()}` },
+              ]}
+            />
+          )}
+
+          <PrimaryBtn onClick={handleRecordPayment} disabled={saving || !selectedMember || !selectedPlanId}>
+            {saving ? "Recording..." : "Confirm and Record Payment"}
+          </PrimaryBtn>
+        </div>
+      </Modal>
     </div>
   )
 }

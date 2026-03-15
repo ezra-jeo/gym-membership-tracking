@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { CheckCircle2, XCircle, Loader2, UserPlus } from 'lucide-react';
+import { CheckCircle2, XCircle, UserPlus } from 'lucide-react';
+import { A, ACard, Avatar, EmptyState, LoadingSkeleton, PageHeader } from '@/lib/admin-ui';
 
 interface PendingMember {
   id: string;
@@ -49,74 +50,62 @@ export default function PendingMembersPage() {
     setActionLoading(null);
   }
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}>
-          Pending Approvals
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-          Review and approve new member requests
-        </p>
-      </div>
+  if (loading) {
+    return <LoadingSkeleton rows={5} h={76} />;
+  }
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-primary)' }} />
-        </div>
-      ) : members.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <UserPlus className="h-12 w-12 mb-4" style={{ color: 'var(--color-text-muted)' }} />
-          <p className="text-lg font-medium" style={{ color: 'var(--color-text-primary)' }}>No pending requests</p>
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            New member requests will appear here
-          </p>
-        </div>
+  return (
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader
+        title="Pending Approvals"
+        subtitle="Review and approve new member requests"
+      />
+
+      {members.length === 0 ? (
+        <EmptyState
+          icon={<UserPlus size={40} />}
+          title="No pending requests"
+          subtitle="New member requests will appear here"
+        />
       ) : (
-        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-light-gray)' }}>
-          <table className="w-full">
-            <thead>
-              <tr style={{ backgroundColor: 'var(--color-surface)' }}>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Email</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Requested</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => (
-                <tr key={m.id} className="border-t" style={{ borderColor: 'var(--color-light-gray)' }}>
-                  <td className="px-4 py-3 font-medium" style={{ color: 'var(--color-text-primary)' }}>{m.name}</td>
-                  <td className="px-4 py-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{m.email}</td>
-                  <td className="px-4 py-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                    {new Date(m.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => handleAction(m.id, 'active')}
-                        disabled={actionLoading === m.id}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:scale-105"
-                        style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#16a34a' }}
-                      >
-                        {actionLoading === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleAction(m.id, 'rejected')}
-                        disabled={actionLoading === m.id}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-all hover:scale-105"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        Reject
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-2">
+          {members.map((m) => (
+            <ACard key={m.id} className="p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar name={m.name} size={9} />
+                  <div className="min-w-0">
+                    <p className="font-medium truncate" style={{ color: A.text }}>{m.name}</p>
+                    <p className="text-sm truncate" style={{ color: A.text2 }}>{m.email}</p>
+                    <p className="text-xs" style={{ color: A.muted }}>Requested {new Date(m.created_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleAction(m.id, 'active')}
+                    disabled={actionLoading === m.id}
+                    className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    style={{ backgroundColor: 'var(--admin-active-bg)', color: 'var(--admin-active-text)', border: '1px solid var(--admin-active-border)' }}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAction(m.id, 'rejected')}
+                    disabled={actionLoading === m.id}
+                    className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-60"
+                    style={{ backgroundColor: 'var(--admin-expired-bg)', color: 'var(--admin-expired-text)', border: '1px solid var(--admin-expired-border)' }}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </ACard>
+          ))}
         </div>
       )}
     </div>

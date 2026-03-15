@@ -17,6 +17,8 @@ import {
   Megaphone,
   UserPlus,
   Monitor,
+  PackageOpen,
+  Tag,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -24,7 +26,9 @@ const NAV_ITEMS = [
   { href: '/admin/members',         label: 'Members',       icon: Users },
   { href: '/admin/members/pending', label: 'Pending',       icon: UserPlus },
   { href: '/admin/payments',        label: 'Payments',      icon: CreditCard },
-  { href: '/admin/announcements',   label: 'Announcements', icon: Megaphone },
+  { href: '/admin/plans',           label: 'Plans',         icon: PackageOpen },
+  { href: '/admin/promos',          label: 'Promos',        icon: Tag },
+  // { href: '/admin/announcements',   label: 'Announcements', icon: Megaphone },
   { href: '/admin/reports',         label: 'Reports',       icon: BarChart3 },
   { href: '/kiosk',                 label: 'Kiosk',         icon: Monitor },
 ];
