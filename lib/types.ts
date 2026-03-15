@@ -98,49 +98,7 @@ export interface Streak {
   lastVisitDate: string | null
 }
 
-export type BadgeCriteriaType = "visit_count" | "early_bird" | "streak"
-
-export interface BadgeCriteria {
-  type: BadgeCriteriaType
-  threshold: number
-}
-
-export interface Badge {
-  id: string
-  name: string
-  description: string
-  icon: string
-  criteria: BadgeCriteria
-}
-
-export interface MemberBadge {
-  memberId: string
-  badgeId: string
-  earnedAt: string
-}
-
-export interface Challenge {
-  id: string
-  title: string
-  description: string
-  goalType: string
-  goalTarget: number
-  startDate: string
-  endDate: string
-  reward: string | null
-  createdBy: string
-  createdAt: string
-}
-
-export interface ChallengeParticipant {
-  challengeId: string
-  memberId: string
-  progress: number
-  completed: boolean
-  joinedAt: string
-}
-
-export type FeedItemType = "check_in" | "check_out" | "badge" | "challenge" | "announcement" | "streak_milestone"
+export type FeedItemType = "check_in" | "check_out" | "announcement" | "streak_milestone"
 
 export interface FeedItem {
   id: string
@@ -149,19 +107,10 @@ export interface FeedItem {
   title: string
   description: string | null
   metadata: Record<string, unknown> | null
-  kudosCount: number
   createdAt: string
   // Joined data (optional, populated by queries)
   memberName?: string
   memberAvatar?: string | null
-  hasKudosed?: boolean
-}
-
-export interface Kudos {
-  id: string
-  fromMember: string
-  feedItemId: string
-  createdAt: string
 }
 
 export interface Announcement {
@@ -182,8 +131,6 @@ export interface MemberStats {
   currentStreak: number
   bestStreak: number
   avgSessionMinutes: number
-  badgesEarned: number
-  totalBadges: number
   leaderboardRank: number | null
 }
 

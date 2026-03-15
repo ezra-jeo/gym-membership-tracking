@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Select,
   SelectContent,
@@ -51,6 +53,13 @@ interface PaymentRow {
   plan_name: string
 }
 
+interface PlanOption {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+}
+
 export default function MembersPage() {
   const supabase = createClient()
   const [members, setMembers] = useState<MemberRow[]>([])
@@ -58,6 +67,12 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
   const [selectedPayments, setSelectedPayments] = useState<PaymentRow[]>([])
+  const [renewOpen, setRenewOpen] = useState(false)
+  const [renewMember, setRenewMember] = useState<MemberRow | null>(null)
+  const [renewPlans, setRenewPlans] = useState<PlanOption[]>([])
+  const [renewPlanId, setRenewPlanId] = useState("")
+  const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
+  const [renewLoading, setRenewLoading] = useState(false)
 
   const fetchMembers = useCallback(async () => {
     // Query profiles as the primary source — RLS filters by gym_id automatically
@@ -169,6 +184,78 @@ export default function MembersPage() {
       return
     }
     toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
+    fetchMembers()
+  }
+
+  async function loadRenewPlans() {
+    const { data, error } = await supabase
+      .from("membership_plans")
+      .select("id, name, price, duration_days")
+      .order("price")
+
+    if (error) {
+      toast.error("Failed to load membership plans")
+      return
+    }
+
+    setRenewPlans(data ?? [])
+    setRenewPlanId(data?.[0]?.id ?? "")
+  }
+
+  async function openRenewDialog(member: MemberRow) {
+    setRenewMember(member)
+    setRenewPaymentMethod("cash")
+    setRenewPlans([])
+    setRenewPlanId("")
+    setRenewOpen(true)
+    await loadRenewPlans()
+  }
+
+  async function handleRenewMembership() {
+    if (!renewMember) return
+    const plan = renewPlans.find((p) => p.id === renewPlanId)
+    if (!plan) {
+      toast.error("Please select a membership plan")
+      return
+    }
+
+    setRenewLoading(true)
+
+    const startDate = new Date()
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + plan.duration_days)
+    const startDateValue = startDate.toISOString().split("T")[0]
+
+    const { error: insertError } = await supabase.from("memberships").insert({
+      member_id: renewMember.profile_id,
+      plan_id: plan.id,
+      start_date: startDateValue,
+      end_date: endDate.toISOString().split("T")[0],
+      status: "active",
+      payment_method: renewPaymentMethod,
+      amount_paid: plan.price,
+    })
+
+    if (insertError) {
+      toast.error("Failed to renew: " + insertError.message)
+      setRenewLoading(false)
+      return
+    }
+
+    await supabase
+      .from("memberships")
+      .update({ status: "expired" })
+      .eq("member_id", renewMember.profile_id)
+      .eq("status", "active")
+      .neq("start_date", startDateValue)
+
+    toast.success(renewMember.name + " renewed successfully!")
+    setRenewLoading(false)
+    setRenewOpen(false)
+    setRenewMember(null)
+    setRenewPlans([])
+    setRenewPlanId("")
+    setRenewPaymentMethod("cash")
     fetchMembers()
   }
 
@@ -393,6 +480,14 @@ export default function MembersPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openRenewDialog(m)}
+                          className="h-7 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                        >
+                          Renew
+                        </Button>
                         {m.membership_id && m.membership_status === "active" && (
                           <Button
                             variant="ghost"
@@ -424,6 +519,114 @@ export default function MembersPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={renewOpen}
+        onOpenChange={(open) => {
+          setRenewOpen(open)
+          if (!open) {
+            setRenewLoading(false)
+            setRenewMember(null)
+          }
+        }}
+      >
+        <DialogContent className="border-muted-foreground/20 bg-foreground text-primary-foreground sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-primary-foreground">Renew Membership</DialogTitle>
+          </DialogHeader>
+
+          {renewMember && (
+            <div className="space-y-5">
+              <div className="rounded-lg border border-muted-foreground/20 bg-muted-foreground/5 p-4">
+                <p className="text-sm font-medium text-primary-foreground">{renewMember.name}</p>
+                <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">Current Plan</p>
+                    <p className="text-primary-foreground">{renewMember.plan_name ?? "No plan"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Expiry</p>
+                    <p className="text-primary-foreground">{renewMember.end_date ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Status</p>
+                    <Badge variant="outline" className={statusColor(renewMember.membership_status)}>
+                      {renewMember.membership_status ?? "no plan"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-primary-foreground">Membership Plan</Label>
+                <RadioGroup
+                  value={renewPlanId}
+                  onValueChange={setRenewPlanId}
+                  className="grid grid-cols-1 gap-2"
+                >
+                  {renewPlans.map((plan) => (
+                    <label
+                      key={plan.id}
+                      className={`flex cursor-pointer items-center justify-between rounded-lg border p-3 text-sm transition-colors ${
+                        renewPlanId === plan.id
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
+                      }`}
+                    >
+                      <div>
+                        <p className="font-medium">{plan.name}</p>
+                        <p className="text-xs">{plan.duration_days} days</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{"\u20B1" + plan.price.toLocaleString()}</span>
+                        <RadioGroupItem value={plan.id} id={`renew-plan-${plan.id}`} />
+                      </div>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-primary-foreground">Payment Method</Label>
+                <RadioGroup
+                  value={renewPaymentMethod}
+                  onValueChange={(value) => setRenewPaymentMethod(value as "cash" | "gcash")}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  <label
+                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
+                      renewPaymentMethod === "cash"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
+                    }`}
+                  >
+                    <RadioGroupItem value="cash" id="renew-payment-cash" />
+                    Cash
+                  </label>
+                  <label
+                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-3 text-sm transition-colors ${
+                      renewPaymentMethod === "gcash"
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40"
+                    }`}
+                  >
+                    <RadioGroupItem value="gcash" id="renew-payment-gcash" />
+                    GCash
+                  </label>
+                </RadioGroup>
+              </div>
+
+              <Button
+                onClick={handleRenewMembership}
+                disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {renewLoading ? "Renewing..." : "Renew & Record Payment"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <p className="text-xs text-muted-foreground">
         Showing {filtered.length} of {members.length} members

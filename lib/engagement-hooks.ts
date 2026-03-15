@@ -1,7 +1,5 @@
 import { createClient } from "./supabase"
 import { updateStreak } from "./streaks"
-import { evaluateBadges } from "./badges"
-import type { Badge } from "./types"
 
 export interface CheckInResult {
   status: "checked_in" | "checked_out"
@@ -11,7 +9,6 @@ export interface CheckInResult {
     bestStreak: number
     isNewBest: boolean
   } | null
-  newBadges: Badge[]
   durationMin: number | null
 }
 
@@ -55,30 +52,20 @@ export async function handleScan(memberId: string): Promise<CheckInResult> {
     }
 
     // Run engagement hooks in parallel
-    const [streakResult, newBadges] = await Promise.all([
+    const [streakResult] = await Promise.all([
       updateStreak(memberId),
-      evaluateBadges(memberId),
       postCheckInFeedItem(memberId, gymId),
     ])
-
-    // Post badge feed items
-    for (const badge of newBadges) {
-      await postBadgeFeedItem(memberId, gymId, badge)
-    }
 
     // Post streak milestone feed items
     if (streakResult.currentStreak > 0 && streakResult.currentStreak % 7 === 0) {
       await postStreakMilestoneFeedItem(memberId, gymId, streakResult.currentStreak)
     }
 
-    // Update challenge progress
-    await updateChallengeProgress(memberId)
-
     return {
       status: "checked_in",
       attendanceId: attendance.id,
       streak: streakResult,
-      newBadges,
       durationMin: null,
     }
   } else {
@@ -103,7 +90,6 @@ export async function handleScan(memberId: string): Promise<CheckInResult> {
       status: "checked_out",
       attendanceId: openSession.id,
       streak: null,
-      newBadges: [],
       durationMin,
     }
   }
@@ -145,24 +131,6 @@ async function postCheckInFeedItem(memberId: string, gymId: string | null) {
   })
 }
 
-async function postBadgeFeedItem(memberId: string, gymId: string | null, badge: Badge) {
-  const supabase = createClient()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name")
-    .eq("id", memberId)
-    .maybeSingle()
-
-  await supabase.from("feed_items").insert({
-    member_id: memberId,
-    gym_id: gymId,
-    type: "badge",
-    title: `${profile?.name ?? "Someone"} earned ${badge.icon} ${badge.name}!`,
-    description: badge.description,
-    metadata: { badge_id: badge.id, badge_name: badge.name, badge_icon: badge.icon },
-  })
-}
-
 async function postStreakMilestoneFeedItem(
   memberId: string,
   gymId: string | null,
@@ -183,39 +151,4 @@ async function postStreakMilestoneFeedItem(
     description: `${streak} consecutive days at the gym`,
     metadata: { streak_count: streak },
   })
-}
-
-async function updateChallengeProgress(memberId: string) {
-  const supabase = createClient()
-  const today = new Date().toISOString().split("T")[0]
-
-  const { data: participations } = await supabase
-    .from("challenge_participants")
-    .select("*, challenges(*)")
-    .eq("member_id", memberId)
-    .eq("completed", false)
-
-  if (!participations) return
-
-  for (const participation of participations) {
-    const challenge = participation.challenges as unknown as {
-      goal_type: string
-      goal_target: number
-      start_date: string
-      end_date: string
-    }
-
-    if (!challenge || today > challenge.end_date || today < challenge.start_date) continue
-
-    if (challenge.goal_type === "visit_count") {
-      const newProgress = participation.progress + 1
-      const completed = newProgress >= challenge.goal_target
-
-      await supabase
-        .from("challenge_participants")
-        .update({ progress: newProgress, completed })
-        .eq("challenge_id", participation.challenge_id)
-        .eq("member_id", memberId)
-    }
-  }
 }

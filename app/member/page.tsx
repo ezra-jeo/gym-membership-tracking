@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { Flame, TrendingUp, Clock, Award, Calendar, ChevronRight } from 'lucide-react';
+import { Flame, TrendingUp, Clock, Calendar, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import type { MemberStats } from '@/lib/types';
 
@@ -31,8 +31,6 @@ export default function MemberHomePage() {
       currentStreak:       data.streak.current_streak,
       bestStreak:          data.streak.best_streak,
       avgSessionMinutes:   data.avg_session_minutes,
-      badgesEarned:        data.badges_earned,
-      totalBadges:         data.total_badges,
       leaderboardRank:     null,
     })
 
@@ -125,7 +123,6 @@ export default function MemberHomePage() {
         <StatCard icon={<Calendar size={20} />} label="This Month" value={stats?.monthlyVisits ?? 0} unit="visits" />
         <StatCard icon={<TrendingUp size={20} />} label="All Time" value={stats?.totalVisits ?? 0} unit="visits" />
         <StatCard icon={<Clock size={20} />} label="Avg Session" value={stats?.avgSessionMinutes ?? 0} unit="min" />
-        <StatCard icon={<Award size={20} />} label="Badges" value={`${stats?.badgesEarned ?? 0}/${stats?.totalBadges ?? 0}`} unit="" />
       </div>
 
       {/* Quick Links */}
@@ -135,7 +132,6 @@ export default function MemberHomePage() {
         </h2>
         <QuickLink href="/member/feed" label="Activity Feed" description="See what everyone's up to" />
         <QuickLink href="/member/leaderboard" label="Leaderboard" description="Monthly rankings" />
-        <QuickLink href="/member/challenges" label="Challenges" description="Join gym challenges" />
         <QuickLink href="/member/profile" label="My QR Code" description="Show at check-in" />
       </div>
 

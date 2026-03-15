@@ -18,7 +18,6 @@ import {
   Clock,
   Camera,
   Flame,
-  Award,
   Loader2,
   AlertCircle,
 } from "lucide-react"
@@ -202,7 +201,6 @@ export default function KioskPage() {
       attendanceId: result.attendance_id,
       memberName: result.member_name,
       streak: null,   // streak data lives server-side now; fetch separately if needed
-      newBadges: [],
       durationMin: result.duration_min ?? null,
     }
 
@@ -231,7 +229,6 @@ export default function KioskPage() {
         attendanceId: result.attendance_id,
         memberName,
         streak: null,
-        newBadges: [],
         durationMin: result.duration_min ?? null,
       })
 
@@ -334,16 +331,6 @@ export default function KioskPage() {
               {scanResult.streak.isNewBest && (
                 <span className="text-sm opacity-80">(New record!)</span>
               )}
-            </div>
-          )}
-          {scanResult.newBadges.length > 0 && (
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <Award size={20} />
-              {scanResult.newBadges.map((b) => (
-                <span key={b.id} className="text-sm">
-                  {b.icon} {b.name}
-                </span>
-              ))}
             </div>
           )}
           {scanResult.durationMin != null && (

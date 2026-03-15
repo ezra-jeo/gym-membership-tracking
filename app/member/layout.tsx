@@ -9,8 +9,6 @@ import {
   Home,
   Activity,
   Trophy,
-  Award,
-  Target,
   User,
   LogOut,
 } from 'lucide-react';
@@ -19,8 +17,6 @@ const NAV_ITEMS = [
   { href: '/member', label: 'Home', icon: Home },
   { href: '/member/feed', label: 'Feed', icon: Activity },
   { href: '/member/leaderboard', label: 'Ranks', icon: Trophy },
-  { href: '/member/badges', label: 'Badges', icon: Award },
-  { href: '/member/challenges', label: 'Goals', icon: Target },
 ];
 
 export default function MemberLayout({

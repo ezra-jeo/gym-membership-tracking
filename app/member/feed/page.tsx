@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { FeedItem } from '@/lib/types';
-import { Heart, MessageCircle, Clock } from 'lucide-react';
+import { MessageCircle, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function FeedPage() {
@@ -21,31 +21,22 @@ export default function FeedPage() {
       .limit(50);
 
     if (data) {
-      const items: FeedItem[] = data.map((item) => {
+      const items: FeedItem[] = [];
+
+      for (const item of data) {
+        if (!isSupportedFeedType(item.type)) continue;
+
         const profileData = item.profiles as unknown as { name: string; avatar_url: string | null } | null;
-        return {
+        items.push({
           id: item.id,
           memberId: item.member_id,
           type: item.type,
           title: item.title,
           description: item.description,
           metadata: item.metadata as Record<string, unknown> | null,
-          kudosCount: item.kudos_count,
           createdAt: item.created_at,
           memberName: profileData?.name ?? 'Unknown',
           memberAvatar: profileData?.avatar_url ?? null,
-        };
-      });
-
-      if (profile) {
-        const { data: kudosData } = await supabase
-          .from('kudos')
-          .select('feed_item_id')
-          .eq('from_member', profile.id);
-
-        const kudosedIds = new Set(kudosData?.map((k) => k.feed_item_id) ?? []);
-        items.forEach((item) => {
-          item.hasKudosed = kudosedIds.has(item.id);
         });
       }
 
@@ -68,11 +59,9 @@ export default function FeedPage() {
           title: row.title as string,
           description: (row.description as string) ?? null,
           metadata: (row.metadata as Record<string, unknown>) ?? null,
-          kudosCount: 0,
           createdAt: row.created_at as string,
           memberName: 'Gym Member',
           memberAvatar: null,
-          hasKudosed: false,
         };
         setFeedItems((prev) => [newItem, ...prev.slice(0, 49)]);
       })
@@ -82,28 +71,6 @@ export default function FeedPage() {
       supabase.removeChannel(channel);
     };
   }, [loadFeed, supabase]);
-
-  async function handleKudos(feedItemId: string) {
-    if (!profile) return;
-
-    const item = feedItems.find((f) => f.id === feedItemId);
-    if (!item || item.hasKudosed || item.memberId === profile.id) return;
-
-    const { error } = await supabase.from('kudos').insert({
-      from_member: profile.id,
-      feed_item_id: feedItemId,
-    });
-
-    if (!error) {
-      setFeedItems((prev) =>
-        prev.map((f) =>
-          f.id === feedItemId
-            ? { ...f, kudosCount: f.kudosCount + 1, hasKudosed: true }
-            : f
-        )
-      );
-    }
-  }
 
   if (isLoading) {
     return (
@@ -140,7 +107,7 @@ export default function FeedPage() {
       ) : (
         <div className="space-y-3">
           {feedItems.map((item) => (
-            <FeedCard key={item.id} item={item} onKudos={handleKudos} isOwnItem={item.memberId === profile?.id} />
+            <FeedCard key={item.id} item={item} />
           ))}
         </div>
       )}
@@ -150,12 +117,8 @@ export default function FeedPage() {
 
 function FeedCard({
   item,
-  onKudos,
-  isOwnItem,
 }: {
   item: FeedItem;
-  onKudos: (id: string) => void;
-  isOwnItem: boolean;
 }) {
   const typeIcon = getFeedTypeIcon(item.type);
   const timeAgo = formatDistanceToNow(new Date(item.createdAt), { addSuffix: true });
@@ -185,22 +148,6 @@ function FeedCard({
           )}
 
           <div className="flex items-center gap-4 mt-3">
-            {/* Kudos button */}
-            <button
-              onClick={() => onKudos(item.id)}
-              disabled={item.hasKudosed || isOwnItem}
-              className="flex items-center gap-1.5 text-sm transition-all"
-              style={{
-                color: item.hasKudosed ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                opacity: isOwnItem ? 0.5 : 1,
-                cursor: item.hasKudosed || isOwnItem ? 'default' : 'pointer',
-              }}
-            >
-              <Heart size={16} fill={item.hasKudosed ? 'currentColor' : 'none'} />
-              <span>{item.kudosCount > 0 ? item.kudosCount : ''}</span>
-            </button>
-
-            {/* Timestamp */}
             <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
               <Clock size={12} />
               {timeAgo}
@@ -216,10 +163,12 @@ function getFeedTypeIcon(type: FeedItem['type']): string {
   switch (type) {
     case 'check_in': return '💪';
     case 'check_out': return '👋';
-    case 'badge': return '🏅';
-    case 'challenge': return '🎯';
     case 'announcement': return '📢';
     case 'streak_milestone': return '🔥';
     default: return '📝';
   }
+}
+
+function isSupportedFeedType(type: string): type is FeedItem['type'] {
+  return type === 'check_in' || type === 'check_out' || type === 'announcement' || type === 'streak_milestone';
 }
