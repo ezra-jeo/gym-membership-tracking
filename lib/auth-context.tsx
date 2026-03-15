@@ -68,12 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: data.email,
         name: data.name,
         contactNumber: data.contact_number,
-        role: data.role,
+        role: data.role ?? "member",
         status: data.status ?? "active",
         gymId: data.gym_id ?? null,
         avatarUrl: data.avatar_url,
-        qrCode: data.qr_code,
-        createdAt: data.created_at,
+        qrCode: data.qr_code ?? "",
+        createdAt: data.created_at ?? new Date().toISOString(),
       })
     }
     setIsLoading(false)

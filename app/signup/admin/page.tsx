@@ -55,8 +55,8 @@ export default function AdminSignUpPage() {
       p_name:        name,
       p_gym_name:    gymName,
       p_gym_code:    code,
-      p_gym_address: gymAddress || null,
-      p_gym_phone:   gymPhone || null,
+      p_gym_address: gymAddress || undefined,
+      p_gym_phone:   gymPhone || undefined,
     })
 
     if (rpcError) { setError(rpcError.message); setIsLoading(false); return }

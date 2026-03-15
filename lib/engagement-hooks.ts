@@ -82,7 +82,7 @@ export async function handleScan(memberId: string): Promise<CheckInResult> {
       throw new Error("Failed to check out: " + error?.message)
     }
 
-    const checkInTime = new Date(openSession.check_in).getTime()
+    const checkInTime = new Date(openSession.check_in ?? "").getTime()
     const checkOutTime = new Date(now).getTime()
     const durationMin = Math.round((checkOutTime - checkInTime) / 60000)
 
@@ -110,7 +110,7 @@ async function postCheckInFeedItem(memberId: string, gymId: string | null) {
     .maybeSingle()
 
   const streakText =
-    streak && streak.current_streak > 1 ? ` 🔥 ${streak.current_streak}-day streak!` : ""
+    streak && (streak.current_streak ?? 0) > 1 ? ` 🔥 ${streak.current_streak}-day streak!` : ""
 
   const hour = new Date().getHours()
   const timeOfDay =

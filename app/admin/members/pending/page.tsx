@@ -31,7 +31,14 @@ export default function PendingMembersPage() {
       .eq('gym_id', profile!.gymId!)
       .eq('status', 'pending')
       .order('created_at', { ascending: true });
-    setMembers(data ?? []);
+    setMembers(
+      (data ?? []).map((m) => ({
+        id: m.id,
+        name: m.name,
+        email: m.email,
+        created_at: m.created_at ?? new Date().toISOString(),
+      }))
+    );
     setLoading(false);
   }
 

@@ -29,12 +29,12 @@ export default function FeedPage() {
         const profileData = item.profiles as unknown as { name: string; avatar_url: string | null } | null;
         items.push({
           id: item.id,
-          memberId: item.member_id,
+          memberId: item.member_id ?? "",
           type: item.type,
           title: item.title,
           description: item.description,
           metadata: item.metadata as Record<string, unknown> | null,
-          createdAt: item.created_at,
+          createdAt: item.created_at ?? "",
           memberName: profileData?.name ?? 'Unknown',
           memberAvatar: profileData?.avatar_url ?? null,
         });

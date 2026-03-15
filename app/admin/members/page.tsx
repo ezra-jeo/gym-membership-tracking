@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/lib/auth-context"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -42,14 +43,14 @@ interface MemberRow {
   start_date: string | null
   end_date: string | null
   membership_status: "active" | "expired" | "frozen" | null
-  created_at: string
+  created_at: string | null
 }
 
 interface PaymentRow {
   id: string
   amount_paid: number
   payment_method: "cash" | "gcash"
-  created_at: string
+  created_at: string | null
   plan_name: string
 }
 
@@ -62,6 +63,7 @@ interface PlanOption {
 
 export default function MembersPage() {
   const supabase = createClient()
+  const { profile } = useAuth()
   const [members, setMembers] = useState<MemberRow[]>([])
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -94,6 +96,7 @@ export default function MembersPage() {
     // Build a map of member_id → latest membership
     const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
     for (const m of membershipsData ?? []) {
+      if (!m.member_id) continue
       // Keep only the latest (first due to ordering) membership per member
       if (!membershipMap.has(m.member_id)) {
         membershipMap.set(m.member_id, m)
@@ -234,6 +237,7 @@ export default function MembersPage() {
       status: "active",
       payment_method: renewPaymentMethod,
       amount_paid: plan.price,
+      gym_id: profile?.gymId ?? null,
     })
 
     if (insertError) {
@@ -418,7 +422,7 @@ export default function MembersPage() {
                                   <p className="text-xs text-muted-foreground">
                                     Member Since
                                   </p>
-                                  <p>{selectedMember.created_at.split("T")[0]}</p>
+                                  <p>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "—"}</p>
                                 </div>
                               </div>
                               <div>

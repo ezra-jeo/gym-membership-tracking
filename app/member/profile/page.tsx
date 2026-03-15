@@ -68,7 +68,7 @@ export default function ProfilePage() {
         planName: plan?.name ?? 'Unknown',
         startDate: data.start_date,
         endDate: data.end_date,
-        status: data.status,
+        status: data.status ?? 'expired',
       });
     }
   }

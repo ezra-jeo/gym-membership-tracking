@@ -42,7 +42,7 @@ export default function AdminAnnouncementsPage() {
           id: a.id,
           title: a.title,
           body: a.body,
-          createdAt: a.created_at,
+          createdAt: a.created_at ?? new Date().toISOString(),
         }))
       );
     }

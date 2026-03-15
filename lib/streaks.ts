@@ -25,11 +25,15 @@ export async function updateStreak(memberId: string): Promise<{
     return { currentStreak: 1, bestStreak: 1, isNewBest: true }
   }
 
+  // Null-coerce — DB columns are number | null per generated types
+  const currentStreak = streak.current_streak ?? 0
+  const bestStreak = streak.best_streak ?? 0
+
   // Already visited today — no change
   if (streak.last_visit_date === today) {
     return {
-      currentStreak: streak.current_streak,
-      bestStreak: streak.best_streak,
+      currentStreak,
+      bestStreak,
       isNewBest: false,
     }
   }
@@ -42,13 +46,13 @@ export async function updateStreak(memberId: string): Promise<{
     const diffDays = Math.floor(
       (todayDate.getTime() - lastVisit.getTime()) / (1000 * 60 * 60 * 24)
     )
-    newStreak = diffDays === 1 ? streak.current_streak + 1 : 1
+    newStreak = diffDays === 1 ? currentStreak + 1 : 1
   } else {
     newStreak = 1
   }
 
-  const newBest = Math.max(newStreak, streak.best_streak)
-  const isNewBest = newBest > streak.best_streak
+  const newBest = Math.max(newStreak, bestStreak)
+  const isNewBest = newBest > bestStreak
 
   await supabase
     .from("streaks")
@@ -64,12 +68,12 @@ export async function getStreak(memberId: string) {
     .from("streaks")
     .select("*")
     .eq("member_id", memberId)
-    .maybeSingle()  // member may have no streak row yet
+    .maybeSingle()
 
   return data
     ? {
-        currentStreak: data.current_streak,
-        bestStreak: data.best_streak,
+        currentStreak: data.current_streak ?? 0,
+        bestStreak: data.best_streak ?? 0,
         lastVisitDate: data.last_visit_date,
       }
     : { currentStreak: 0, bestStreak: 0, lastVisitDate: null }

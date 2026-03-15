@@ -79,11 +79,11 @@ export default function PaymentsPage() {
       (data ?? []).map((p) => ({
         id: p.id,
         member_name: (p.profiles as unknown as { name: string })?.name ?? "Unknown",
-        member_id: p.member_id,
+        member_id: p.member_id ?? "",
         plan_name: (p.membership_plans as unknown as { name: string })?.name ?? "Unknown",
         amount_paid: p.amount_paid,
         payment_method: p.payment_method,
-        created_at: p.created_at,
+        created_at: p.created_at ?? new Date().toISOString(),
       }))
     )
 

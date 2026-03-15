@@ -17,7 +17,6 @@ import {
   Calendar,
   Clock,
   Camera,
-  Flame,
   Loader2,
   AlertCircle,
 } from "lucide-react"
@@ -31,6 +30,46 @@ interface CheckedInEntry {
   memberId: string
   memberName: string
   checkIn: string
+}
+
+type KioskErrorResult = {
+  error: string
+  message?: string
+  member_name?: string
+}
+
+type KioskCheckinResult = {
+  action: "checked_in" | "checked_out"
+  attendance_id: string
+  member_name?: string
+  duration_min?: number
+}
+
+type KioskCheckoutResult = {
+  duration_min?: number
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isKioskErrorResult(value: unknown): value is KioskErrorResult {
+  return isJsonObject(value) && typeof value.error === "string"
+}
+
+function isKioskCheckinResult(value: unknown): value is KioskCheckinResult {
+  return (
+    isJsonObject(value) &&
+    (value.action === "checked_in" || value.action === "checked_out") &&
+    typeof value.attendance_id === "string"
+  )
+}
+
+function isKioskCheckoutResult(value: unknown): value is KioskCheckoutResult {
+  return (
+    isJsonObject(value) &&
+    (!("duration_min" in value) || typeof value.duration_min === "number")
+  )
 }
 
 export default function KioskPage() {
@@ -62,7 +101,6 @@ export default function KioskPage() {
 
   async function loadCheckedIn() {
     const supabase = createClient()
-    // Use the kiosk_checked_in RPC to bypass RLS — kiosk has no auth session
     const { data, error } = await supabase.rpc("kiosk_get_checked_in")
     if (data && !error) {
       setCheckedIn(
@@ -78,9 +116,7 @@ export default function KioskPage() {
 
   const startScanner = useCallback(async () => {
     setScanStatus("initializing")
-    console.log("[Kiosk] Initializing QR scanner...")
 
-    // Clean up any existing scanner
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop()
@@ -100,17 +136,14 @@ export default function KioskPage() {
           if (isProcessingRef.current) return
           isProcessingRef.current = true
           setScanStatus("processing")
-          console.log("[Kiosk] QR scanned:", decodedText)
 
           try {
             await handleQrScan(decodedText)
           } catch (err) {
-            // handleQrScan throws on DB/scan failures — show error and reset
             toast.error("Check-in failed. Please try again.")
             console.error("[Kiosk] scan error:", err)
             setScanResult(null)
           } finally {
-            // Always reset after 3s cooldown — prevents duplicate scans
             setTimeout(() => {
               isProcessingRef.current = false
               setScanStatus("scanning")
@@ -121,7 +154,6 @@ export default function KioskPage() {
       )
 
       setScanStatus("scanning")
-      console.log("[Kiosk] Scanner active — waiting for QR codes")
     } catch (err) {
       console.error("[Kiosk] Scanner failed to start:", err)
       setScanStatus("error")
@@ -133,7 +165,6 @@ export default function KioskPage() {
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop()
-        console.log("[Kiosk] Scanner stopped")
       } catch { /* already stopped */ }
       scannerRef.current = null
     }
@@ -141,7 +172,6 @@ export default function KioskPage() {
 
   useEffect(() => {
     if (mode === "qr") {
-      // Small delay so the container div is rendered before html5-qrcode attaches
       const timer = setTimeout(() => startScanner(), 100)
       return () => {
         clearTimeout(timer)
@@ -154,62 +184,58 @@ export default function KioskPage() {
   }, [mode, startScanner])
 
   async function handleQrScan(qrCode: string) {
-    console.log("[Kiosk] Processing QR:", qrCode)
     const supabase = createClient()
 
-    // Resolve the QR code to a raw value the RPC can use.
-    // Format may be: stren://checkin/{gym_id}/{member_id}  (old — extract member QR code)
-    // OR the qr_code column value directly (new format, UUID string)
-    let rawQr = qrCode
-    const match = qrCode.match(/^stren:\/\/checkin\/([^/]+)\/([^/]+)$/)
-    if (match) {
-      // Old deep-link format — reconstruct the stored qr_code value
-      rawQr = qrCode // the RPC looks up by qr_code column; old rows stored this full string
-    }
-
-    const { data, error } = await supabase.rpc("kiosk_checkin", { p_qr_code: rawQr })
+    const { data, error } = await supabase.rpc("kiosk_checkin", { p_qr_code: qrCode })
 
     if (error) {
       console.error("[Kiosk] RPC error:", error)
       throw new Error(error.message)
     }
 
-    if (data && "error" in data) {
-      // Business-logic errors returned as typed union variant
+    if (isKioskErrorResult(data)) {
       if (data.error === "unknown_qr") {
         toast.error("Unknown QR code.")
       } else if (data.error === "rejected") {
-        toast.error(`Cannot check in — ${data.member_name}'s account has been rejected.`)
+        const rejectedMemberName =
+          typeof data.member_name === "string" && data.member_name.trim().length > 0
+            ? data.member_name
+            : "this member"
+        toast.error(`Cannot check in — ${rejectedMemberName}'s account has been rejected.`)
       } else {
-        toast.error(data.message ?? "Check-in failed.")
+        toast.error(
+          typeof data.message === "string" ? data.message : "Check-in failed."
+        )
       }
       return
     }
 
-    const result = data as {
-      action: "checked_in" | "checked_out"
-      attendance_id: string
-      member_id: string
-      member_name: string
-      member_status: string
-      duration_min?: number
+    if (!isKioskCheckinResult(data)) {
+      toast.error("Unexpected kiosk response.")
+      return
     }
 
-    // Build a CheckInResult-compatible object for the banner
+    const memberName =
+      typeof data.member_name === "string" && data.member_name.trim().length > 0
+        ? data.member_name
+        : "Member"
+
     const checkInResult: CheckInResult & { memberName: string } = {
-      status: result.action === "checked_in" ? "checked_in" : "checked_out",
-      attendanceId: result.attendance_id,
-      memberName: result.member_name,
-      streak: null,   // streak data lives server-side now; fetch separately if needed
-      durationMin: result.duration_min ?? null,
+      status: data.action === "checked_in" ? "checked_in" : "checked_out",
+      attendanceId: data.attendance_id,
+      memberName,
+      streak: null,
+      durationMin: typeof data.duration_min === "number" ? data.duration_min : null,
     }
 
     setScanResult(checkInResult)
 
-    if (result.action === "checked_in") {
-      toast.success(`${result.member_name} checked in!`)
+    if (data.action === "checked_in") {
+      toast.success(`${memberName} checked in!`)
     } else {
-      toast.success(`${result.member_name} checked out! (${result.duration_min} min)`)
+      const durationText =
+        typeof data.duration_min === "number" ? ` (${data.duration_min} min)` : ""
+      toast.success(`${memberName} checked out!${durationText}`)
     }
 
     loadCheckedIn()
@@ -221,21 +247,30 @@ export default function KioskPage() {
     try {
       const { data, error } = await supabase.rpc("kiosk_checkin_by_member", { p_member_id: memberId })
       if (error) throw error
-      if (data && "error" in data) { toast.error(data.message ?? "Check-in failed."); return }
+      if (isKioskErrorResult(data)) {
+        toast.error(typeof data.message === "string" ? data.message : "Check-in failed.")
+        return
+      }
 
-      const result = data as { action: string; attendance_id: string; duration_min?: number }
+      if (!isKioskCheckinResult(data)) {
+        toast.error("Unexpected kiosk response.")
+        return
+      }
+
       setScanResult({
-        status: result.action === "checked_in" ? "checked_in" : "checked_out",
-        attendanceId: result.attendance_id,
+        status: data.action === "checked_in" ? "checked_in" : "checked_out",
+        attendanceId: data.attendance_id,
         memberName,
         streak: null,
-        durationMin: result.duration_min ?? null,
+        durationMin: typeof data.duration_min === "number" ? data.duration_min : null,
       })
 
-      if (result.action === "checked_in") {
+      if (data.action === "checked_in") {
         toast.success(`${memberName} checked in!`)
       } else {
-        toast.success(`${memberName} checked out! (${result.duration_min} min)`)
+        const durationText =
+          typeof data.duration_min === "number" ? ` (${data.duration_min} min)` : ""
+        toast.success(`${memberName} checked out!${durationText}`)
       }
 
       loadCheckedIn()
@@ -250,7 +285,6 @@ export default function KioskPage() {
 
   async function handleManualCheckOut(memberId: string) {
     const supabase = createClient()
-    // Find the open attendance row for this member
     const { data: openRow } = await supabase.rpc("kiosk_get_checked_in")
     const entry = (openRow as { attendance_id: string; member_id: string; member_name: string; check_in: string }[] | null)
       ?.find((r) => r.member_id === memberId)
@@ -263,8 +297,21 @@ export default function KioskPage() {
     try {
       const { data, error } = await supabase.rpc("kiosk_checkout", { p_attendance_id: entry.attendance_id })
       if (error) throw error
-      if (data && "error" in data) { toast.error("Session not found."); return }
-      toast.success(`Checked out! (${data.duration_min} min)`)
+      if (isKioskErrorResult(data)) {
+        toast.error("Session not found.")
+        return
+      }
+
+      if (!isKioskCheckoutResult(data)) {
+        toast.error("Unexpected checkout response.")
+        return
+      }
+
+      if (typeof data.duration_min === "number") {
+        toast.success(`Checked out! (${data.duration_min} min)`)
+      } else {
+        toast.success("Checked out!")
+      }
       loadCheckedIn()
     } catch {
       toast.error("Check-out failed.")
@@ -324,15 +371,6 @@ export default function KioskPage() {
             {scanResult.status === "checked_in" ? "Welcome!" : "See you next time!"}
           </p>
           <p className="text-lg opacity-90 mt-1">{scanResult.memberName}</p>
-          {scanResult.streak && scanResult.streak.currentStreak > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-3">
-              <Flame size={20} />
-              <span className="font-semibold">{scanResult.streak.currentStreak}-day streak</span>
-              {scanResult.streak.isNewBest && (
-                <span className="text-sm opacity-80">(New record!)</span>
-              )}
-            </div>
-          )}
           {scanResult.durationMin != null && (
             <p className="mt-2 text-sm opacity-80">Session: {scanResult.durationMin} min</p>
           )}
@@ -375,7 +413,6 @@ export default function KioskPage() {
           >
             <div id={SCANNER_ELEMENT_ID} className="w-full" />
           </div>
-          {/* Scan status indicator */}
           <div className="mt-4 flex items-center justify-center gap-2 text-sm">
             {scanStatus === "initializing" && (
               <>
@@ -465,7 +502,6 @@ export default function KioskPage() {
               ) : (
                 results.map((m) => {
                   const inGym = isCurrentlyCheckedIn(m.id)
-                  const canCheckIn = m.membershipStatus === "active" || m.membershipStatus === "none" || m.membershipStatus === "pending"
                   return (
                     <div
                       key={m.id}
