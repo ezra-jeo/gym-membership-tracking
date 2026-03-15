@@ -30,7 +30,7 @@ export default function MemberLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut, isLoading } = useAuth();
+  const { profile, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -43,10 +43,6 @@ export default function MemberLayout({
     );
   }
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.push('/login');
-  };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -59,9 +55,7 @@ export default function MemberLayout({
         }}
       >
         <Link href="/member" className="flex items-center gap-2">
-          <div className="h-8 w-8 relative">
-            <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-          </div>
+          <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
           <span className="font-bold text-lg" style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-heading)' }}>
             Stren
           </span>
@@ -96,13 +90,6 @@ export default function MemberLayout({
             <User size={18} />
             {profile?.name ?? 'Profile'}
           </Link>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            <LogOut size={18} />
-          </button>
         </div>
       </header>
 

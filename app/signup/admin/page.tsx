@@ -27,62 +27,47 @@ export default function AdminSignUpPage() {
   const [gymCode, setGymCode] = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-
-    if (!gymName || !name || !email || !password) { setError('Please fill in all required fields'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
-
-    setIsLoading(true);
+    e.preventDefault()
+    setError('')
+    if (!gymName || !name || !email || !password) { setError('Please fill in all required fields'); return }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
+    setIsLoading(true)
 
     // 1. Create auth user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name, role: 'owner' } },
-    });
-    if (authError) { setError(authError.message); setIsLoading(false); return; }
-    if (!authData.user) { setError('Sign-up failed'); setIsLoading(false); return; }
+    })
+    if (authError) { setError(authError.message); setIsLoading(false); return }
+    if (!authData.user) { setError('Sign-up failed'); setIsLoading(false); return }
 
-    // 2. Sign in immediately to get an authenticated session
-    //    Without this, subsequent DB writes fail with "No API key" because
-    //    signUp does not automatically establish a session on the client.
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) { setError('Account created but could not sign in: ' + signInError.message); setIsLoading(false); return; }
+    // 2. Sign in to get an authenticated session
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInError) { setError('Account created but could not sign in: ' + signInError.message); setIsLoading(false); return }
 
-    // 3. Create gym (now authenticated)
-    const code = generateCode(gymName);
-    const { data: gymData, error: gymError } = await supabase
-      .from('gyms')
-      .insert({ name: gymName, code, address: gymAddress || null, phone: gymPhone || null })
-      .select('id')
-      .single();
+    // 3. Create gym + owner profile atomically via SECURITY DEFINER RPC
+    //    This bypasses RLS — no direct gyms INSERT or profiles UPDATE needed
+    const code = generateCode(gymName)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('create_gym_and_owner', {
+      p_user_id:     authData.user.id,
+      p_email:       email,
+      p_name:        name,
+      p_gym_name:    gymName,
+      p_gym_code:    code,
+      p_gym_address: gymAddress || null,
+      p_gym_phone:   gymPhone || null,
+    })
 
-    if (gymError || !gymData) {
-      setError(gymError?.message ?? 'Failed to create gym');
-      setIsLoading(false);
-      return;
-    }
+    if (rpcError) { setError(rpcError.message); setIsLoading(false); return }
 
-    // 4. Update profile with gym_id, role, and QR code
-    //    The handle_new_user trigger already created the profile row —
-    //    we just need to patch the gym-specific fields.
-    const qrCode = `stren://checkin/${gymData.id}/${authData.user.id}`;
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ name, role: 'owner', status: 'active', gym_id: gymData.id, qr_code: qrCode })
-      .eq('id', authData.user.id);
+    // 4. Sign out — let the user log in fresh
+    await supabase.auth.signOut()
 
-    if (profileError) { setError(profileError.message); setIsLoading(false); return; }
-
-    // 5. Sign out — let the user log in fresh so auth context loads cleanly
-    await supabase.auth.signOut();
-
-    setGymCode(code);
-    setIsLoading(false);
-    setDone(true);
+    setGymCode((rpcData as { gym_code: string }).gym_code)
+    setIsLoading(false)
+    setDone(true)
   }
-
   const inputStyle = {
     backgroundColor: 'var(--color-white)',
     borderColor: 'var(--color-light-gray)',
@@ -95,8 +80,8 @@ export default function AdminSignUpPage() {
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-12">
           <Link href="/landing">
-            <div className="h-20 w-20 relative cursor-pointer hover:opacity-80 transition-opacity">
-              <Image src="/stren-logo.png" alt="Stren Logo" fill className="object-contain" />
+            <div className="cursor-pointer hover:opacity-80 transition-opacity">
+              <Image src="/stren-logo.png" alt="Stren Logo" width={80} height={80} className="object-contain" />
             </div>
           </Link>
         </div>

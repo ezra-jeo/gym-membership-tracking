@@ -16,9 +16,7 @@ export default function LandingPage() {
         }}
       >
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 relative">
-            <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-          </div>
+          <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
           <span 
             className="text-2xl font-bold"
             style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-heading)' }}
@@ -491,9 +489,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 relative">
-                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-              </div>
+              <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
               <span 
                 className="text-lg font-bold"
                 style={{ color: 'var(--color-primary)' }}

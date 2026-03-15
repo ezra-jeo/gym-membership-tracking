@@ -96,8 +96,8 @@ export default function MemberSignUpPage() {
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-12">
           <Link href="/landing">
-            <div className="h-20 w-20 relative cursor-pointer hover:opacity-80 transition-opacity">
-              <Image src="/stren-logo.png" alt="Stren Logo" fill className="object-contain" />
+            <div className="cursor-pointer hover:opacity-80 transition-opacity">
+              <Image src="/stren-logo.png" alt="Stren Logo" width={80} height={80} className="object-contain" />
             </div>
           </Link>
         </div>

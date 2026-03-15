@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase"
 import type { User } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
@@ -9,10 +10,9 @@ interface AuthContextValue {
   user: User | null
   profile: Profile | null
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>
+  signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null }>
   signUp: (email: string, password: string, name: string, role?: "member" | "admin") => Promise<{ error: string | null }>
   signOut: () => Promise<void>
-  demoSignIn: (role: "admin" | "member" | "owner") => void
   refreshProfile: () => Promise<void>
 }
 
@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const router = useRouter()
 
   // Stable client — not recreated on every render
   const supabase = useMemo(() => createClient(), [])
@@ -79,8 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error?.message ?? null }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    return { error: error?.message ?? null, user: data.user ?? null }
   }
 
   async function signUp(
@@ -97,34 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error?.message ?? null }
   }
 
-  function demoSignIn(role: "admin" | "member" | "owner") {
-    const demoId = `demo-${role}`
-    const demoProfile: Profile = {
-      id: demoId,
-      email: `${role}@demo.stren`,
-      name: role === "owner" ? "Demo Owner" : role === "admin" ? "Demo Admin" : "Demo Member",
-      contactNumber: null,
-      role,
-      status: "active",
-      gymId: "demo-gym",
-      avatarUrl: null,
-      qrCode: `stren://checkin/demo-gym/${demoId}`,
-      createdAt: new Date().toISOString(),
-    }
-    document.cookie = `demo-role=${role}; path=/; max-age=86400; SameSite=Lax`
-    setUser({ id: demoId } as User)
-    setProfile(demoProfile)
-    setIsLoading(false)
-  }
-
   async function signOut() {
-    // Clear demo cookie first so middleware doesn't see a stale role
-    document.cookie = "demo-role=; path=/; max-age=0"
     // Clear local state immediately so UI reacts before the redirect
     setUser(null)
     setProfile(null)
     // Sign out from Supabase — clears the session cookie
-    // onAuthStateChange will fire but state is already null so it's a no-op
     await supabase.auth.signOut()
   }
 
@@ -133,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, isLoading, signIn, signUp, signOut, demoSignIn, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, isLoading, signIn, signUp, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

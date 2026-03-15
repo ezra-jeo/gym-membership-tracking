@@ -23,7 +23,11 @@ export default function ProfilePage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile) {
+      router.push("/login"); 
+      router.refresh();
+      return;
+    };
     generateQR();
     loadMembership();
     setEditName(profile.name);
@@ -91,7 +95,6 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.push('/login');
   };
 
   if (!profile) {

@@ -22,7 +22,7 @@ function getRoleHome(role: string): string {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, demoSignIn } = useAuth();
+  const { signIn, signOut } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function LoginPage() {
       return;
     }
 
-    const { error: authError } = await signIn(email, password);
+    const { error: authError, user } = await signIn(email, password);
 
     if (authError) {
       setError(authError);
@@ -47,38 +47,35 @@ export default function LoginPage() {
       return;
     }
 
-    // Fetch profile to determine where to send the user
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, status')
-        .eq('id', user.id)
-        .single();
-
-      if (profile?.status === 'pending') {
-        setError('Your account is awaiting gym approval.');
-        await supabase.auth.signOut();
-        setIsLoading(false);
-        return;
-      }
-      if (profile?.status === 'rejected') {
-        setError('Your membership request was not approved. Contact the gym for details.');
-        await supabase.auth.signOut();
-        setIsLoading(false);
-        return;
-      }
-
-      // ✅ Fixed: owners/admins/staff go to /admin, members go to /member
-      router.push(getRoleHome(profile?.role ?? 'member'));
-      router.refresh();
+    if (!user) {
+      setError('Login failed. Please try again.');
+      setIsLoading(false);
       return;
     }
 
+    // Fetch profile directly using the user id from signIn — no extra getUser() call
+    const supabase = createClient();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, status')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profile?.status === 'pending') {
+      setError('Your account is awaiting gym approval.');
+      await signOut();
+      setIsLoading(false);
+      return;
+    }
+    if (profile?.status === 'rejected') {
+      setError('Your membership request was not approved. Contact the gym for details.');
+      await signOut();
+      setIsLoading(false);
+      return;
+    }
+
+    router.push(getRoleHome(profile?.role ?? 'member'));
     router.refresh();
-    setIsLoading(false);
   };
 
   return (
@@ -90,11 +87,12 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex justify-center mb-12">
           <Link href="/landing">
-            <div className="h-20 w-20 relative cursor-pointer hover:opacity-80 transition-opacity">
+            <div className="cursor-pointer hover:opacity-80 transition-opacity">
               <Image
                 src="/stren-logo.png"
                 alt="Stren Logo"
-                fill
+                width={80}
+                height={80}
                 className="object-contain"
               />
             </div>
@@ -223,50 +221,6 @@ export default function LoginPage() {
               {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          {/* Demo access — dev only */}
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="mt-6">
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t" style={{ borderColor: 'var(--color-light-gray)' }} />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2" style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-text-muted)' }}>
-                    DEMO ACCESS
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    demoSignIn('admin');
-                    router.push('/admin');
-                    router.refresh();
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
-                  style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
-                >
-                  <Shield size={14} />
-                  Demo Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    demoSignIn('member');
-                    router.push('/member');
-                    router.refresh();
-                  }}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-all hover:scale-105"
-                  style={{ borderColor: 'var(--color-text-secondary)', color: 'var(--color-text-secondary)' }}
-                >
-                  <User size={14} />
-                  Demo Member
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="mt-8 text-center">
             <p style={{ color: 'var(--color-text-secondary)' }}>

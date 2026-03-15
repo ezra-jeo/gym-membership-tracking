@@ -25,22 +25,12 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // Demo mode — bypass Supabase auth for debug access
-  const demoRole = request.cookies.get("demo-role")?.value
-  if (demoRole === "admin" || demoRole === "member" || demoRole === "owner") {
-    if (pathname === "/login" || pathname === "/signup") {
-      const redirectTo = demoRole === "member" ? "/member" : "/admin"
-      return NextResponse.redirect(new URL(redirectTo, request.url))
-    }
-    if (pathname.startsWith("/admin")) {
-      if (demoRole === "member") {
-        return NextResponse.redirect(new URL("/member", request.url))
-      }
-    }
-    // Redirect stale /dashboard URLs to /admin
-    if (pathname.startsWith("/dashboard")) {
-      return NextResponse.redirect(new URL("/admin", request.url))
-    }
+  // Public routes — no auth needed (checked before getUser to avoid unnecessary auth calls)
+  const publicRoutes = ["/", "/landing", "/login", "/signup", "/signup/member", "/signup/admin"]
+  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
+
+  // Kiosk is accessible without auth (used at the gym front desk)
+  if (pathname.startsWith("/kiosk")) {
     return supabaseResponse
   }
 
@@ -48,9 +38,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Public routes — no auth needed
-  const publicRoutes = ["/", "/landing", "/login", "/signup", "/signup/member", "/signup/admin"]
-  if (publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))) {
+  if (isPublicRoute) {
     if (user && (pathname === "/login" || pathname === "/signup")) {
       // Use maybeSingle — profile may not exist yet if trigger hasn't fired
       const { data: profile } = await supabase
@@ -66,11 +54,6 @@ export async function middleware(request: NextRequest) {
       const redirectTo = profile.role === "member" ? "/member" : "/admin"
       return NextResponse.redirect(new URL(redirectTo, request.url))
     }
-    return supabaseResponse
-  }
-
-  // Kiosk is accessible without auth (used at the gym front desk)
-  if (pathname.startsWith("/kiosk")) {
     return supabaseResponse
   }
 
