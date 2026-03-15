@@ -28,8 +28,8 @@ export default function MemberHomePage() {
     setStats({
       totalVisits:         data.total_visits,
       monthlyVisits:       data.monthly_visits,
-      currentStreak:       data.streak.current_streak,
-      bestStreak:          data.streak.best_streak,
+      currentStreak:       data.streak?.current_streak ?? 0,
+      bestStreak:          data.streak?.best_streak ?? 0,
       avgSessionMinutes:   data.avg_session_minutes,
       leaderboardRank:     null,
     })
