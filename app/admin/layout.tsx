@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
+import { NotificationsPanel } from '@/components/notifications-panel';
+import { LoadingScreen } from '@/components/ui/loading-screen';
 import {
   LayoutDashboard,
   Users,
@@ -46,9 +48,10 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user) { router.push('/login'); return; }
-    if (profile && !['owner', 'admin', 'staff'].includes(profile.role)) {
-      router.push('/member');
+    // signOut() handles redirect to /login itself — don't duplicate here
+    // Only redirect unauthorized roles
+    if (user && profile && !['owner', 'admin', 'staff'].includes(profile.role)) {
+      router.replace('/member');
     }
   }, [user, profile, isLoading, router]);
 
@@ -66,7 +69,7 @@ export default function AdminLayout({
       });
   }, [profile?.gymId]);
 
-  if (isLoading || !user || !profile) return null;
+  if (isLoading || !user || !profile) return <LoadingScreen />;
 
   const handleLogout = async () => {
     await signOut();
@@ -150,13 +153,16 @@ export default function AdminLayout({
           className="space-y-4 pt-4 border-t"
           style={{ borderColor: 'var(--color-graphite)' }}
         >
-          <div className="px-2">
-            <p className="text-sm font-medium truncate" style={{ color: 'var(--color-light-gray)' }}>
-              {profile.email}
-            </p>
-            <p className="text-xs capitalize" style={{ color: 'var(--color-gray)' }}>
-              {profile.role}
-            </p>
+          <div className="px-2 flex items-center justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: 'var(--color-light-gray)' }}>
+                {profile.email}
+              </p>
+              <p className="text-xs capitalize" style={{ color: 'var(--color-gray)' }}>
+                {profile.role}
+              </p>
+            </div>
+            <NotificationsPanel />
           </div>
           <button
             onClick={handleLogout}
@@ -186,14 +192,17 @@ export default function AdminLayout({
           }}
         >
           <GymBadge />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsOpen(!isOpen)}
-            style={{ color: 'var(--color-gray)' }}
-          >
-            {isOpen ? <X /> : <Menu />}
-          </Button>
+          <div className="flex items-center gap-1">
+            <NotificationsPanel />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsOpen(!isOpen)}
+              style={{ color: 'var(--color-gray)' }}
+            >
+              {isOpen ? <X /> : <Menu />}
+            </Button>
+          </div>
         </div>
 
         {/* Mobile menu */}

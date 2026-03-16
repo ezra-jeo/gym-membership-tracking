@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { Flame, TrendingUp, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { PageSkeleton } from '@/components/ui/loading-screen';
 import type { MemberStats } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,6 +142,12 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
       ),
     ];
 
+    // Split flat cells into rows of 7 for week drilldown
+    const weeks: (string | null)[][] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push(cells.slice(i, i + 7).concat(Array(7).fill(null)).slice(0, 7));
+    }
+
     return (
       <>
         <div className="grid grid-cols-7 mb-1">
@@ -150,16 +157,33 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-y-1">
-          {cells.map((dateStr, i) =>
-            dateStr === null ? (
-              <div key={`e-${i}`} />
-            ) : (
-              <div key={dateStr} className="flex items-center justify-center aspect-square">
-                <DayDot dateStr={dateStr} />
-              </div>
-            )
-          )}
+        <div className="space-y-0.5">
+          {weeks.map((week, weekIdx) => {
+            // Find first non-null date in the week to use as anchor for weekly drilldown
+            const firstDate = week.find((d) => d !== null);
+            return (
+              <button
+                key={weekIdx}
+                onClick={() => {
+                  if (!firstDate) return;
+                  setView('weekly');
+                  setAnchor(startOfWeek(new Date(firstDate + 'T00:00:00')));
+                }}
+                className="grid grid-cols-7 w-full rounded-md transition-colors hover:bg-primary/5"
+                title="View this week"
+              >
+                {week.map((dateStr, i) =>
+                  dateStr === null ? (
+                    <div key={`e-${weekIdx}-${i}`} className="aspect-square" />
+                  ) : (
+                    <div key={dateStr} className="flex items-center justify-center aspect-square">
+                      <DayDot dateStr={dateStr} />
+                    </div>
+                  )
+                )}
+              </button>
+            );
+          })}
         </div>
       </>
     );
@@ -214,9 +238,13 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
           ];
 
           return (
-            <div
+            <button
               key={label}
-              className="rounded-lg border p-2"
+              onClick={() => {
+                setView('monthly');
+                setAnchor(new Date(year, month, 1));
+              }}
+              className="rounded-lg border p-2 text-left w-full transition-all hover:border-primary"
               style={{ borderColor: 'var(--color-surface)', backgroundColor: 'var(--color-white)' }}
             >
               <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-primary)' }}>{label}</p>
@@ -246,7 +274,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
                   );
                 })}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -373,15 +401,7 @@ export default function MemberHomePage() {
     setIsLoading(false);
   }
 
-  if (isLoading || !profile) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-surface)' }} />
-        ))}
-      </div>
-    );
-  }
+  if (isLoading || !profile) return <PageSkeleton rows={4} height={96} />;
 
   const greeting = getGreeting();
 

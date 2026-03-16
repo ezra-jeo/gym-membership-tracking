@@ -7,6 +7,7 @@ import { QrCode, Settings, LogOut, Edit2, Save, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/ui/loading-screen';
 
 export default function ProfilePage() {
   const { profile, signOut } = useAuth();
@@ -97,15 +98,7 @@ export default function ProfilePage() {
     await signOut();
   };
 
-  if (!profile) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-surface)' }} />
-        ))}
-      </div>
-    );
-  }
+  if (!profile) return <PageSkeleton rows={3} height={96} />;
 
   return (
     <div className="space-y-6">

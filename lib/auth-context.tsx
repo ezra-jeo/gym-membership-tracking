@@ -99,11 +99,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    // Clear local state immediately so UI reacts before the redirect
+    // Sign out from Supabase first — this clears the session cookie
+    await supabase.auth.signOut()
+    // Then clear local state
     setUser(null)
     setProfile(null)
-    // Sign out from Supabase — clears the session cookie
-    await supabase.auth.signOut()
+    // Hard navigate so middleware sees the cleared cookie
+    router.replace('/login')
   }
 
   async function refreshProfile() {

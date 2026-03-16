@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { LoadingScreen } from '@/components/ui/loading-screen';
 import {
   Home,
   Activity,
@@ -12,6 +13,7 @@ import {
   User,
   LogOut,
 } from 'lucide-react';
+import { useEffect } from 'react';
 
 const NAV_ITEMS = [
   { href: '/member', label: 'Home', icon: Home },
@@ -26,18 +28,15 @@ export default function MemberLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, isLoading } = useAuth();
+  const { user, profile, isLoading } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-background)' }}>
-        <div className="animate-pulse text-center">
-          <div className="h-12 w-12 rounded-full mx-auto mb-4" style={{ backgroundColor: 'var(--color-primary-glow)' }} />
-          <p style={{ color: 'var(--color-text-muted)' }}>Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading) return <LoadingScreen />;
 
 
   return (

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { LeaderboardEntry } from '@/lib/types';
 import { Trophy, Medal, Flame, Clock } from 'lucide-react';
+import { PageSkeleton } from '@/components/ui/loading-screen';
 
 type LeaderboardCategory = 'visits' | 'duration' | 'streak';
 
@@ -107,11 +108,7 @@ export default function LeaderboardPage() {
 
       {/* Leaderboard list */}
       {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-surface)' }} />
-          ))}
-        </div>
+        <PageSkeleton rows={5} height={64} />
       ) : entries.length === 0 ? (
         <div className="text-center py-12">
           <Trophy size={48} className="mx-auto mb-4" style={{ color: 'var(--color-text-muted)' }} />

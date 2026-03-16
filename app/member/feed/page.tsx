@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import type { FeedItem } from '@/lib/types';
 import { MessageCircle, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { PageSkeleton } from '@/components/ui/loading-screen';
 
 export default function FeedPage() {
   const { profile } = useAuth();
@@ -72,15 +73,7 @@ export default function FeedPage() {
     };
   }, [loadFeed, supabase]);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-28 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--color-surface)' }} />
-        ))}
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton rows={5} height={112} />;
 
   return (
     <div className="space-y-6">
