@@ -9,7 +9,7 @@ import type { MemberStats } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CalendarView = 'daily' | 'weekly' | 'monthly';
+type CalendarView = 'weekly' | 'monthly' | 'yearly';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
   const todayStr = toDateStr(today);
 
   const [view, setView] = useState<CalendarView>('monthly');
-  // anchor: first day of month (monthly) | Sunday of week (weekly) | the day (daily)
+  // anchor: first day of month (monthly) | Sunday of week (weekly) | Jan 1 (yearly)
   const [anchor, setAnchor] = useState<Date>(() => new Date(today.getFullYear(), today.getMonth(), 1));
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -49,8 +49,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
       const weekStart = startOfWeek(today);
       return anchor < weekStart;
     }
-    // daily
-    return toDateStr(anchor) < todayStr;
+    return anchor.getFullYear() < today.getFullYear();
   }
 
   function navigate(dir: -1 | 1) {
@@ -59,7 +58,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
     } else if (view === 'weekly') {
       setAnchor(addDays(anchor, dir * 7));
     } else {
-      setAnchor(addDays(anchor, dir));
+      setAnchor(new Date(anchor.getFullYear() + dir, 0, 1));
     }
   }
 
@@ -67,7 +66,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
     setView(v);
     if (v === 'monthly') setAnchor(new Date(today.getFullYear(), today.getMonth(), 1));
     else if (v === 'weekly') setAnchor(startOfWeek(today));
-    else setAnchor(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    else setAnchor(new Date(today.getFullYear(), 0, 1));
   }
 
   // ── Labels ──────────────────────────────────────────────────────────────────
@@ -82,7 +81,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
       const endFmt = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       return `${startFmt} – ${endFmt}`;
     }
-    return anchor.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    return String(anchor.getFullYear());
   }, [view, anchor]);
 
   // ── Counts ──────────────────────────────────────────────────────────────────
@@ -100,7 +99,8 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
       }
       return count;
     }
-    return visitedDates.has(toDateStr(anchor)) ? 1 : 0;
+    const yearPrefix = `${anchor.getFullYear()}-`;
+    return Array.from(visitedDates).filter((d) => d.startsWith(yearPrefix)).length;
   }, [view, anchor, visitedDates]);
 
   // ── Render helpers ──────────────────────────────────────────────────────────
@@ -195,25 +195,60 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
     );
   }
 
-  // ── Daily view ──────────────────────────────────────────────────────────────
+  // ── Yearly view ─────────────────────────────────────────────────────────────
 
-  function DailyView() {
-    const ds = toDateStr(anchor);
-    const visited = visitedDates.has(ds);
+  function YearlyGrid() {
+    const year = anchor.getFullYear();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
     return (
-      <div className="flex flex-col items-center gap-4 py-4">
-        <div
-          className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold transition-all"
-          style={{
-            backgroundColor: visited ? 'var(--color-primary)' : 'var(--color-surface)',
-            color: visited ? 'white' : 'var(--color-text-muted)',
-          }}
-        >
-          {anchor.getDate()}
-        </div>
-        <p className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-          {visited ? '✅ You visited the gym this day' : 'No visit recorded'}
-        </p>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        {monthNames.map((label, month) => {
+          const firstDow = new Date(year, month, 1).getDay();
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const cells: (string | null)[] = [
+            ...Array(firstDow).fill(null),
+            ...Array.from({ length: daysInMonth }, (_, i) =>
+              `${year}-${String(month + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+            ),
+          ];
+
+          return (
+            <div
+              key={label}
+              className="rounded-lg border p-2"
+              style={{ borderColor: 'var(--color-surface)', backgroundColor: 'var(--color-white)' }}
+            >
+              <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--color-text-primary)' }}>{label}</p>
+              <div className="grid grid-cols-7 gap-1">
+                {cells.map((dateStr, idx) => {
+                  if (dateStr === null) {
+                    return <div key={`empty-${label}-${idx}`} className="w-2.5 h-2.5" />;
+                  }
+                  const visited = visitedDates.has(dateStr);
+                  const isToday = dateStr === todayStr;
+                  const isFuture = dateStr > todayStr;
+
+                  return (
+                    <div
+                      key={dateStr}
+                      className="w-2.5 h-2.5 rounded-[3px]"
+                      style={{
+                        backgroundColor: visited ? 'var(--color-primary)' : 'var(--color-surface)',
+                        border: isToday ? '1px solid var(--color-primary)' : '1px solid transparent',
+                        opacity: isFuture && !isToday ? 0.35 : 1,
+                      }}
+                      title={new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -229,7 +264,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
           className="flex items-center gap-1 p-0.5 rounded-lg"
           style={{ backgroundColor: 'var(--color-surface)' }}
         >
-          {(['daily', 'weekly', 'monthly'] as CalendarView[]).map((v) => (
+          {(['weekly', 'monthly', 'yearly'] as CalendarView[]).map((v) => (
             <button
               key={v}
               onClick={() => switchView(v)}
@@ -281,21 +316,25 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
       {/* Content */}
       {view === 'monthly' && <MonthlyGrid />}
       {view === 'weekly' && <WeeklyRow />}
-      {view === 'daily' && <DailyView />}
+      {view === 'yearly' && <YearlyGrid />}
 
-      {/* Legend — only on monthly/weekly */}
-      {view !== 'daily' && (
-        <div className="flex items-center gap-4 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-surface)' }}>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Visited</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full" style={{ border: '1.5px solid var(--color-primary)', backgroundColor: 'var(--color-primary-glow)' }} />
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Today</span>
-          </div>
+      {/* Legend */}
+      <div className="flex items-center gap-4 mt-3 pt-3" style={{ borderTop: '1px solid var(--color-surface)' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Visited</span>
         </div>
-      )}
+        {view === 'yearly' && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-[3px]" style={{ backgroundColor: 'var(--color-surface)' }} />
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No visit</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full" style={{ border: '1.5px solid var(--color-primary)', backgroundColor: 'var(--color-primary-glow)' }} />
+          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Today</span>
+        </div>
+      </div>
     </div>
   );
 }
