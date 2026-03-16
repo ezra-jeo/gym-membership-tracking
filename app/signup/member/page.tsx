@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Search, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
 export default function MemberSignUpPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
 
   const [step, setStep] = useState<'gym' | 'details' | 'done'>('gym');
   const [gymQuery, setGymQuery] = useState('');
@@ -22,6 +24,34 @@ export default function MemberSignUpPage() {
   const [error, setError] = useState('');
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prefillAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (prefillAttemptedRef.current) return;
+    prefillAttemptedRef.current = true;
+
+    const gymCodeParam = searchParams.get('gym');
+    if (!gymCodeParam) return;
+    const gymCode = gymCodeParam;
+
+    let isCancelled = false;
+
+    async function prefillGym() {
+      const { data } = await supabase.rpc('get_gym_by_code', { p_code: gymCode });
+      if (isCancelled) return;
+
+      if (data && data.is_published) {
+        setSelectedGym({ id: data.id, name: data.name });
+        setStep('details');
+      }
+    }
+
+    prefillGym();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [searchParams, supabase]);
 
   function handleGymQueryChange(query: string) {
     setGymQuery(query);

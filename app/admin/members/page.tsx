@@ -50,7 +50,7 @@ interface PlanOption {
 }
 
 export default function MembersPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { profile } = useAuth()
   const [members, setMembers] = useState<MemberRow[]>([])
   const [search, setSearch] = useState("")

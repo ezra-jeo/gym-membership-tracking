@@ -33,7 +33,7 @@ interface MemberOption { id: string; name: string; contact_number: string | null
 interface PlanOption { id: string; name: string; price: number; duration_days: number; description: string | null }
 
 export default function PaymentsPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const { profile } = useAuth()
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])

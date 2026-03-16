@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { Bell, UserPlus, LogIn, AlertCircle, X, CheckCheck } from 'lucide-react';
@@ -36,7 +37,7 @@ const TYPE_BG: Record<Notification['type'], string> = {
 
 export function NotificationsPanel() {
   const { profile } = useAuth();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);

@@ -29,8 +29,8 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ["/", "/landing", "/login", "/signup", "/signup/member", "/signup/admin"]
   const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
 
-  // Kiosk is accessible without auth (used at the gym front desk)
-  if (pathname.startsWith("/kiosk")) {
+  // Kiosk and public gym pages are accessible without auth
+  if (pathname.startsWith("/kiosk") || pathname.startsWith("/gym")) {
     return supabaseResponse
   }
 

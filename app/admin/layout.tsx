@@ -21,9 +21,18 @@ import {
   Monitor,
   PackageOpen,
   Tag,
+  Globe,
+  type LucideIcon,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  ownerOnly?: boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
   { href: '/admin',                 label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/admin/members',         label: 'Members',       icon: Users },
   { href: '/admin/members/pending', label: 'Pending',       icon: UserPlus },
@@ -31,6 +40,7 @@ const NAV_ITEMS = [
   { href: '/admin/plans',           label: 'Plans',         icon: PackageOpen },
   { href: '/admin/promos',          label: 'Promos',        icon: Tag },
   // { href: '/admin/announcements',   label: 'Announcements', icon: Megaphone },
+  { href: '/admin/gym-profile',     label: 'Gym Page',      icon: Globe, ownerOnly: true },
   { href: '/admin/reports',         label: 'Reports',       icon: BarChart3 },
   { href: '/kiosk',                 label: 'Kiosk',         icon: Monitor },
 ];
@@ -75,6 +85,11 @@ export default function AdminLayout({
     await signOut();
   };
 
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (item.ownerOnly) return profile.role === 'owner';
+    return true;
+  });
+
   const displayName = gymName ?? 'Stren';
   const displayInitial = displayName.charAt(0).toUpperCase();
 
@@ -117,7 +132,7 @@ export default function AdminLayout({
         </div>
 
         <nav className="flex-1 space-y-1">
-          {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+          {visibleNavItems.map(({ label, href, icon: Icon }) => {
             const isActive =
               href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
             return (
@@ -214,7 +229,7 @@ export default function AdminLayout({
               borderColor: 'var(--color-graphite)',
             }}
           >
-            {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
+            {visibleNavItems.map(({ label, href, icon: Icon }) => (
               <Link key={href} href={href} onClick={() => setIsOpen(false)}>
                 <Button
                   variant="ghost"

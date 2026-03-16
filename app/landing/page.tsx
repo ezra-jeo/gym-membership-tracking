@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronDown, ArrowRight, Users, BarChart3, Zap, Lock, Smartphone, CalendarDays } from 'lucide-react';
+import { GymFinderSection } from '@/components/gym-finder-section';
 
 export default function LandingPage() {
   return (
@@ -411,6 +412,8 @@ export default function LandingPage() {
           </p>
         </div>
       </section>
+
+      <GymFinderSection />
 
       {/* CTA Section */}
       <section 

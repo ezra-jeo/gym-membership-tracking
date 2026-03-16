@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { CheckCircle2, ArrowLeft } from 'lucide-react';
@@ -13,7 +13,7 @@ function generateCode(name: string) {
 }
 
 export default function AdminSignUpPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [gymName, setGymName] = useState('');
   const [gymAddress, setGymAddress] = useState('');

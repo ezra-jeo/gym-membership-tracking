@@ -150,27 +150,51 @@ export type Database = {
       gyms: {
         Row: {
           address: string | null
+          amenities: string[] | null
+          brand_color: string | null
           code: string
+          cover_url: string | null
           created_at: string | null
+          description: string | null
           id: string
+          logo_url: string | null
           name: string
+          operating_hours: Json | null
           phone: string | null
+          social_links: Json | null
+          tagline: string | null
         }
         Insert: {
           address?: string | null
+          amenities?: string[] | null
+          brand_color?: string | null
           code: string
+          cover_url?: string | null
           created_at?: string | null
+          description?: string | null
           id?: string
+          logo_url?: string | null
           name: string
+          operating_hours?: Json | null
           phone?: string | null
+          social_links?: Json | null
+          tagline?: string | null
         }
         Update: {
           address?: string | null
+          amenities?: string[] | null
+          brand_color?: string | null
           code?: string
+          cover_url?: string | null
           created_at?: string | null
+          description?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
+          operating_hours?: Json | null
           phone?: string | null
+          social_links?: Json | null
+          tagline?: string | null
         }
         Relationships: []
       }
@@ -618,6 +642,26 @@ export type Database = {
       }
 
       // ── Public RPCs ──
+      get_gym_by_code: {
+        Args: { p_code: string }
+        Returns: {
+          id: string
+          name: string
+          code: string
+          address: string | null
+          phone: string | null
+          tagline: string | null
+          description: string | null
+          logo_url: string | null
+          cover_url: string | null
+          brand_color: string
+          operating_hours: Json | null
+          amenities: string[] | null
+          social_links: Json | null
+          member_count: number
+          is_published: boolean
+        } | null
+      }
       search_gyms: {
         Args: { p_query: string }
         Returns: {
