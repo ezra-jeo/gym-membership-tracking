@@ -479,9 +479,9 @@ export type Database = {
     }
     Functions: {
       // ── Auth helpers ──
-      get_gym_id: { Args: never; Returns: string }
-      get_user_role: { Args: never; Returns: string }
-      is_manager: { Args: never; Returns: boolean }
+      get_gym_id: { Args: Record<string, never>; Returns: string }
+      get_user_role: { Args: Record<string, never>; Returns: string }
+      is_manager: { Args: Record<string, never>; Returns: boolean }
 
       // ── Gym signup ──
       create_gym_and_owner: {
@@ -502,7 +502,9 @@ export type Database = {
       kiosk_checkin_by_member: { Args: { p_member_id: string }; Returns: Json }
       kiosk_checkout: { Args: { p_attendance_id: string }; Returns: Json }
       kiosk_get_checked_in: {
-        Args: never
+        // No args = authenticated member portal (gym derived from session)
+        // p_gym_id arg = unauthenticated kiosk path
+        Args: { p_gym_id?: string } | Record<string, never>
         Returns: {
           attendance_id: string
           check_in: string
@@ -529,7 +531,7 @@ export type Database = {
 
       // ── Admin RPCs ──
       admin_dashboard_stats: {
-        Args: never
+        Args: Record<string, never>
         Returns: {
           currently_in: { id: string; member_id: string; check_in: string; name: string }[]
           today_visits: number
@@ -564,28 +566,28 @@ export type Database = {
       }
 
       // ── Leaderboard RPCs ──
-      leaderboard_duration: {
+      leaderboard_workouts: {
         Args: { p_limit?: number }
         Returns: {
-          avatar_url: string
+          avatar_url: string | null
           member_id: string
           member_name: string
           value: number
         }[]
       }
-      leaderboard_streak: {
+      leaderboard_longest_member: {
         Args: { p_limit?: number }
         Returns: {
-          avatar_url: string
+          avatar_url: string | null
           member_id: string
           member_name: string
           value: number
         }[]
       }
-      leaderboard_visits: {
+      leaderboard_week_streak: {
         Args: { p_limit?: number }
         Returns: {
-          avatar_url: string
+          avatar_url: string | null
           member_id: string
           member_name: string
           value: number
@@ -594,7 +596,7 @@ export type Database = {
 
       // ── Member RPCs ──
       member_home_stats: {
-        Args: never
+        Args: Record<string, never>
         Returns: {
           total_visits: number
           monthly_visits: number
@@ -606,6 +608,12 @@ export type Database = {
           } | null
           recent_visits: { date: string; duration_min: number | null }[]
           calendar_dates: string[]
+          membership?: {
+            plan_name: string
+            status: string
+            end_date: string
+            days_left: number
+          }
         }
       }
 
@@ -619,6 +627,11 @@ export type Database = {
           name: string
         }[]
       }
+
+      // ── Internal trigger functions (not called directly from the client) ──
+      handle_new_user: { Args: Record<string, never>; Returns: unknown }
+      handle_checkin_notification: { Args: Record<string, never>; Returns: unknown }
+      handle_pending_member_notification: { Args: Record<string, never>; Returns: unknown }
     }
     Enums: {
       feed_item_type:

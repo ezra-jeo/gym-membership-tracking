@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { Flame, TrendingUp, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flame, TrendingUp, Clock, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import Link from 'next/link';
 import { PageSkeleton } from '@/components/ui/loading-screen';
 import type { MemberStats } from '@/lib/types';
@@ -373,6 +373,7 @@ export default function MemberHomePage() {
   const { profile } = useAuth();
   const [stats, setStats] = useState<MemberStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [peopleInGym, setPeopleInGym] = useState<number | null>(null);
   const [visitedDates, setVisitedDates] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -398,6 +399,10 @@ export default function MemberHomePage() {
 
     const dates = (data.calendar_dates as string[]) ?? [];
     setVisitedDates(new Set(dates));
+
+    const { data: checkedIn } = await supabase.rpc('kiosk_get_checked_in');
+    setPeopleInGym((checkedIn as unknown[])?.length ?? 0);
+
     setIsLoading(false);
   }
 
@@ -460,14 +465,59 @@ export default function MemberHomePage() {
         <StatCard icon={<Flame size={18} />}       label="Best Streak" value={stats?.bestStreak ?? 0}        unit="days"   />
       </div>
 
+      {/* Gym occupancy card */}
+      <div
+        className="rounded-xl p-4 border"
+        style={{
+          backgroundColor: (peopleInGym ?? 0) > 0 ? 'var(--color-success-bg)' : 'var(--color-white)',
+          borderColor: (peopleInGym ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-surface)',
+        }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                backgroundColor: (peopleInGym ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-surface)',
+                color: (peopleInGym ?? 0) > 0 ? 'var(--color-white)' : 'var(--color-text-secondary)',
+              }}
+            >
+              <Users size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                People In Gym
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                {(peopleInGym ?? 0) === 0
+                  ? 'No one is at the gym right now'
+                  : `${peopleInGym} ${peopleInGym === 1 ? 'person is' : 'people are'} at the gym right now`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(peopleInGym ?? 0) > 0 && (
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--color-success)' }} />
+            )}
+            <span
+              className="text-2xl font-bold"
+              style={{ color: (peopleInGym ?? 0) > 0 ? 'var(--color-success)' : 'var(--color-text-primary)' }}
+            >
+              {peopleInGym ?? 0}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Quick Links */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>
           Quick Access
         </h2>
         <QuickLink href="/member/feed"        label="Activity Feed"  description="See what everyone's up to" />
-        <QuickLink href="/member/leaderboard" label="Leaderboard"    description="Monthly rankings" />
+        <QuickLink href="/member/leaderboard" label="Leaderboard"    description="Rankings" />
         <QuickLink href="/member/profile"     label="My QR Code"     description="Show at check-in" />
+        <QuickLink href="/member/settings"    label="Settings"       description="Account & preferences" />
       </div>
     </div>
   );

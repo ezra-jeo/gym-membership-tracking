@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { QrCode, Settings, LogOut, Edit2, Save, X } from 'lucide-react';
+import { LogOut, Edit2, Save, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
@@ -97,6 +97,10 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     await signOut();
   };
+
+  const daysLeft = membershipInfo && membershipInfo.status === 'active'
+    ? Math.max(0, Math.ceil((new Date(membershipInfo.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
 
   if (!profile) return <PageSkeleton rows={3} height={96} />;
 
@@ -224,17 +228,17 @@ export default function ProfilePage() {
       </div>
 
       {/* Membership Info */}
-      {membershipInfo && (
-        <div
-          className="rounded-xl p-5 border"
-          style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
+      <div
+        className="rounded-xl p-5 border"
+        style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
+      >
+        <h2
+          className="text-sm font-semibold uppercase tracking-widest mb-4"
+          style={{ color: 'var(--color-text-secondary)' }}
         >
-          <h2
-            className="text-sm font-semibold uppercase tracking-widest mb-4"
-            style={{ color: 'var(--color-text-secondary)' }}
-          >
-            Membership
-          </h2>
+          Membership
+        </h2>
+        {membershipInfo ? (
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Plan</span>
@@ -242,15 +246,25 @@ export default function ProfilePage() {
             </div>
             <div className="flex justify-between">
               <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Status</span>
-              <span
-                className="font-medium text-sm px-2 py-0.5 rounded-full"
-                style={{
-                  backgroundColor: membershipInfo.status === 'active' ? 'var(--color-success-bg)' : 'var(--color-danger-bg)',
-                  color: membershipInfo.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)',
-                }}
-              >
-                {membershipInfo.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className="font-medium text-sm px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: membershipInfo.status === 'active' ? 'var(--color-success-bg)' : 'var(--color-danger-bg)',
+                    color: membershipInfo.status === 'active' ? 'var(--color-success)' : 'var(--color-danger)',
+                  }}
+                >
+                  {membershipInfo.status}
+                </span>
+                {membershipInfo.status === 'active' && daysLeft !== null && daysLeft <= 7 && (
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}
+                  >
+                    Expiring soon
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex justify-between">
               <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Expires</span>
@@ -258,9 +272,21 @@ export default function ProfilePage() {
                 {new Date(membershipInfo.endDate).toLocaleDateString()}
               </span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Remaining</span>
+              <span className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                {membershipInfo.status === 'active' && daysLeft !== null
+                  ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
+                  : 'Expired'}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            No membership record found.
+          </p>
+        )}
+      </div>
 
       {/* Member since */}
       <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>

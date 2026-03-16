@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { LeaderboardEntry } from '@/lib/types';
-import { Trophy, Medal, Flame, Clock } from 'lucide-react';
+import { Trophy, Medal, Dumbbell, CalendarCheck } from 'lucide-react';
 import { PageSkeleton } from '@/components/ui/loading-screen';
 
-type LeaderboardCategory = 'visits' | 'duration' | 'streak';
+type LeaderboardCategory = 'workouts' | 'longest_member' | 'week_streak';
 
 export default function LeaderboardPage() {
   const { profile } = useAuth();
-  const [category, setCategory] = useState<LeaderboardCategory>('visits');
+  const [category, setCategory] = useState<LeaderboardCategory>('workouts');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [myRank, setMyRank] = useState<number | null>(null);
@@ -27,14 +27,14 @@ export default function LeaderboardPage() {
     type Row = { member_id: string; member_name: string; avatar_url: string | null; value: number }
     let rows: Row[] = []
 
-    if (category === 'visits') {
-      const { data } = await supabase.rpc('leaderboard_visits', { p_limit: 50 })
+    if (category === 'workouts') {
+      const { data } = await (supabase as any).rpc('leaderboard_workouts', { p_limit: 50 })
       rows = (data ?? []) as Row[]
-    } else if (category === 'duration') {
-      const { data } = await supabase.rpc('leaderboard_duration', { p_limit: 50 })
+    } else if (category === 'longest_member') {
+      const { data } = await (supabase as any).rpc('leaderboard_longest_member', { p_limit: 50 })
       rows = (data ?? []) as Row[]
     } else {
-      const { data } = await supabase.rpc('leaderboard_streak', { p_limit: 50 })
+      const { data } = await (supabase as any).rpc('leaderboard_week_streak', { p_limit: 50 })
       rows = (data ?? []) as Row[]
     }
 
@@ -52,10 +52,10 @@ export default function LeaderboardPage() {
     setIsLoading(false)
   }
 
-  const categoryLabels: Record<LeaderboardCategory, { label: string; icon: React.ReactNode; unit: string }> = {
-    visits: { label: 'Most Visits', icon: <Trophy size={18} />, unit: 'visits' },
-    duration: { label: 'Total Time', icon: <Clock size={18} />, unit: 'min' },
-    streak: { label: 'Best Streak', icon: <Flame size={18} />, unit: 'days' },
+  const categoryLabels: Record<LeaderboardCategory, { label: string; icon: React.ReactNode; unit: string; subtitle: string }> = {
+    workouts: { label: 'Most Workouts', icon: <Dumbbell size={18} />, unit: 'check-in', subtitle: 'All-time total check-ins' },
+    longest_member: { label: 'Longest Member', icon: <Medal size={18} />, unit: 'month', subtitle: 'Months as a gym member' },
+    week_streak: { label: 'Active Weeks', icon: <CalendarCheck size={18} />, unit: 'week', subtitle: 'Consecutive weeks with a visit' },
   };
 
   return (
@@ -68,7 +68,7 @@ export default function LeaderboardPage() {
           Leaderboard
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-          Monthly rankings — resets each month
+          {categoryLabels[category].subtitle}
         </p>
       </div>
 
@@ -168,7 +168,7 @@ export default function LeaderboardPage() {
                   {entry.value}
                 </span>
                 <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>
-                  {categoryLabels[category].unit}
+                  {categoryLabels[category].unit + (entry.value > 1 ? "s" : "")}
                 </span>
               </div>
             </div>
