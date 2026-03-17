@@ -95,16 +95,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
+    // Set loading=true immediately so layouts don't see the transient
+    // user=null state and incorrectly redirect to /login before
+    // onAuthStateChange has a chance to fire with the existing session.
+    setIsLoading(true)
+
     let isActive = true
     let hasResolved = false
 
-    // Avoid a permanent loading state if auth events are delayed.
     const bootstrapTimeout = setTimeout(() => {
       if (!isActive || hasResolved) return
       setUser(null)
       setProfile(null)
       setIsLoading(false)
-    }, 8000)
+    }, 5000) // reduced from 8000ms — if it hasn't resolved in 5s, something is wrong
 
     const {
       data: { subscription },
