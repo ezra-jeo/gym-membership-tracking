@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Search, CheckCircle2, ArrowLeft } from 'lucide-react';
@@ -8,6 +8,22 @@ import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 
 export default function MemberSignUpPage() {
+  return (
+    <Suspense fallback={<MemberSignupFallback />}>
+      <MemberSignUpPageContent />
+    </Suspense>
+  );
+}
+
+function MemberSignupFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: 'var(--color-background)' }}>
+      <p style={{ color: 'var(--color-text-secondary)' }}>Loading signup...</p>
+    </div>
+  );
+}
+
+function MemberSignUpPageContent() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
 

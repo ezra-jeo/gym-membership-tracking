@@ -67,17 +67,18 @@ export default function MembersPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const fetchMembers = useCallback(async () => {
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("id, name, email, contact_number, created_at")
-      .eq("role", "member")
-      .eq("status", "active")
-      .order("name")
-
-    const { data: membershipsData } = await supabase
-      .from("memberships")
-      .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
-      .order("created_at", { ascending: false })
+    const [{ data: profilesData }, { data: membershipsData }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, name, email, contact_number, created_at")
+        .eq("role", "member")
+        .eq("status", "active")
+        .order("name"),
+      supabase
+        .from("memberships")
+        .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
+        .order("created_at", { ascending: false }),
+    ])
 
     const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
     for (const m of membershipsData ?? []) {

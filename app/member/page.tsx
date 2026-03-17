@@ -371,6 +371,7 @@ function AttendanceCalendar({ visitedDates }: { visitedDates: Set<string> }) {
 
 export default function MemberHomePage() {
   const { profile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const [stats, setStats] = useState<MemberStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [peopleInGym, setPeopleInGym] = useState<number | null>(null);
@@ -379,14 +380,19 @@ export default function MemberHomePage() {
   useEffect(() => {
     if (!profile) return;
     loadStats();
-  }, [profile]);
+  }, [profile, supabase]);
 
   async function loadStats() {
     if (!profile) return;
-    const supabase = createClient();
 
-    const { data, error } = await supabase.rpc('member_home_stats');
-    if (error || !data) { setIsLoading(false); return; }
+    const [{ data, error }, { data: checkedIn }] = await Promise.all([
+      supabase.rpc('member_home_stats'),
+      supabase.rpc('kiosk_get_checked_in'),
+    ]);
+    if (error || !data) {
+      setIsLoading(false);
+      return;
+    }
 
     setStats({
       totalVisits:       data.total_visits,
@@ -400,7 +406,6 @@ export default function MemberHomePage() {
     const dates = (data.calendar_dates as string[]) ?? [];
     setVisitedDates(new Set(dates));
 
-    const { data: checkedIn } = await supabase.rpc('kiosk_get_checked_in');
     setPeopleInGym((checkedIn as unknown[])?.length ?? 0);
 
     setIsLoading(false);

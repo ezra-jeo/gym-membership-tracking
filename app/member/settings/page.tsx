@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -23,6 +23,7 @@ function SettingsRow({
   onClick,
   danger = false,
   hideChevron = false,
+  disabled = false,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -30,11 +31,13 @@ function SettingsRow({
   onClick?: () => void;
   danger?: boolean;
   hideChevron?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-black/2 text-left"
+      disabled={disabled}
+      className="w-full flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-black/2 text-left disabled:opacity-60 disabled:cursor-not-allowed"
     >
       <div
         className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
@@ -87,7 +90,8 @@ function Divider() {
 }
 
 export default function SettingsPage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, isSigningOut } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,13 +99,13 @@ export default function SettingsPage() {
   if (!profile) return <PageSkeleton rows={3} height={80} />;
 
   async function handleSignOut() {
+    if (isSigningOut) return;
     await signOut();
   }
 
   async function handleDeleteAccount() {
     if (!profile) return;
     setDeleting(true);
-    const supabase = createClient();
     const { error } = await supabase
       .from('profiles')
       .update({ status: 'rejected' })
@@ -171,10 +175,11 @@ export default function SettingsPage() {
       <SectionCard title="Account Actions">
         <SettingsRow
           icon={<LogOut size={17} />}
-          label="Sign Out"
+          label={isSigningOut ? 'Signing Out...' : 'Sign Out'}
           onClick={handleSignOut}
           danger
           hideChevron
+          disabled={isSigningOut}
         />
         <Divider />
         <SettingsRow

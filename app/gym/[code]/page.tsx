@@ -2,9 +2,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MapPin, Phone, Facebook, Instagram, Globe } from 'lucide-react';
-import { createServerSupabaseClient } from '@/lib/supabase-server';
-import { brandColorVars } from '@/lib/brand-color';
+import { getGymAssetPublicUrl, getGymPublicByCode } from '@/lib/gym-public';
 import type { Json } from '@/lib/database.types';
+
+export const revalidate = 86400;
 
 type GymData = {
   id: string;
@@ -14,7 +15,9 @@ type GymData = {
   phone: string | null;
   tagline: string | null;
   description: string | null;
+  logo_path: string | null;
   logo_url: string | null;
+  cover_path: string | null;
   cover_url: string | null;
   brand_color: string;
   operating_hours: Record<string, string> | null;
@@ -31,33 +34,40 @@ type PageProps = {
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
 
 export default async function GymPage({ params }: PageProps) {
-  const { code } = await params;
-  const supabase = await createServerSupabaseClient();
-
-  const { data } = await supabase.rpc('get_gym_by_code', { p_code: code });
+  const { code: rawCode } = await params;
+  const { code, data } = await getGymPublicByCode(rawCode);
   if (!data) notFound();
+
+  const rpcData = data as typeof data & {
+    logo_path?: string | null;
+    cover_path?: string | null;
+  };
+
+  const resolvedLogoPath = normalizeStoragePath(rpcData.logo_path ?? data.logo_url);
+  const resolvedCoverPath = normalizeStoragePath(rpcData.cover_path ?? data.cover_url);
+
+  const resolvedLogoUrl = resolvedLogoPath
+    ? getGymAssetPublicUrl(resolvedLogoPath)
+    : data.logo_url;
+  const resolvedCoverUrl = resolvedCoverPath
+    ? getGymAssetPublicUrl(resolvedCoverPath)
+    : data.cover_url;
 
   const gym: GymData = {
     ...data,
+    logo_path: resolvedLogoPath,
+    cover_path: resolvedCoverPath,
+    logo_url: resolvedLogoUrl,
+    cover_url: resolvedCoverUrl,
     operating_hours: toOperatingHours(data.operating_hours),
     social_links: toSocialLinks(data.social_links),
   };
 
   if (!gym.is_published) {
-    return (
-      <>
-        <style>{`:root { ${brandColorVars(gym.brand_color)} }`}</style>
-        <ComingSoonPage gym={gym} />
-      </>
-    );
+    return <ComingSoonPage gym={gym} />;
   }
 
-  return (
-    <>
-      <style>{`:root { ${brandColorVars(gym.brand_color)} }`}</style>
-      <GymLandingPage gym={gym} />
-    </>
-  );
+  return <GymLandingPage gym={gym} />;
 }
 
 function ComingSoonPage({ gym }: { gym: GymData }) {
@@ -99,25 +109,6 @@ function GymLandingPage({ gym }: { gym: GymData }) {
 
   return (
     <>
-      <nav
-        className="sticky top-0 z-50 border-b border-white/10 backdrop-blur-sm"
-        style={{ background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.25))' }}
-      >
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6 md:px-16 md:py-3">
-          <p className="max-w-[65vw] truncate text-[11px] font-medium uppercase tracking-[0.18em] text-white/85 sm:text-xs md:max-w-none md:text-sm md:tracking-[0.2em]">
-            {gym.name}
-          </p>
-          <Link href={`/signup/member?gym=${encodeURIComponent(gym.code)}`}>
-            <button
-              className="rounded-full px-4 py-1.5 text-xs font-semibold sm:px-5 sm:py-2 md:text-sm"
-              style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
-            >
-              Join
-            </button>
-          </Link>
-        </div>
-      </nav>
-
       <header className="relative min-h-[90vh] overflow-hidden md:min-h-screen">
         {gym.cover_url ? (
           <>
@@ -446,4 +437,23 @@ function toSocialLinks(value: Json | null): { facebook?: string; instagram?: str
   if (typeof source.website === 'string' && source.website.trim()) social.website = source.website;
 
   return Object.keys(social).length > 0 ? social : null;
+}
+
+function normalizeStoragePath(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const marker = '/storage/v1/object/public/gym-assets/';
+  const markerIndex = trimmed.indexOf(marker);
+
+  const rawPath = markerIndex >= 0
+    ? trimmed.slice(markerIndex + marker.length)
+    : trimmed;
+
+  const withoutQuery = rawPath.split('?')[0];
+  const normalized = withoutQuery.replace(/^\/+/, '');
+
+  return normalized || null;
 }

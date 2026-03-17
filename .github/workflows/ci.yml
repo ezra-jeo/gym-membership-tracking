@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────
+# ci.yml — CI/CD Pipeline
+#
+# On pull_request  → run tests only (no deploy)
+# On push to main  → run tests, then deploy to Netlify
+#
+# Calls test-suite.yml so there is a single source of truth
+# for all test steps. No duplication.
+# ─────────────────────────────────────────────────────────────
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  # ── Step 1: Tests ──────────────────────────────────────────
+  # Delegates entirely to test-suite.yml.
+  # Any change to test steps only needs to happen there.
+  tests:
+    name: Test Suite
+    uses: ./.github/workflows/test-suite.yml
+    secrets:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  # ── Step 2: Deploy (main/master push only) ─────────────────
+  # Skipped entirely on pull_request events.
+  # Netlify deploy hook is the simplest approach since you're
+  # already using Netlify's own Git integration — this gives
+  # you a programmatic trigger with pass/fail status in GitHub.
+  deploy:
+    name: Deploy to Netlify
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Only deploy on pushes to main/master, never on PRs
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for production
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Deploy to Netlify
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --dir=.next --prod --message "Deploy from GitHub Actions — ${{ github.sha }}"
+        env:
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}

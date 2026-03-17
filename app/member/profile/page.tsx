@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { LogOut, Edit2, Save, X } from 'lucide-react';
@@ -10,8 +10,9 @@ import { toast } from 'sonner';
 import { PageSkeleton } from '@/components/ui/loading-screen';
 
 export default function ProfilePage() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, isSigningOut } = useAuth();
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -53,7 +54,6 @@ export default function ProfilePage() {
 
   async function loadMembership() {
     if (!profile) return;
-    const supabase = createClient();
 
     const { data } = await supabase
       .from('memberships')
@@ -76,7 +76,6 @@ export default function ProfilePage() {
 
   async function saveProfile() {
     if (!profile) return;
-    const supabase = createClient();
 
     const { error } = await supabase
       .from('profiles')
@@ -95,6 +94,7 @@ export default function ProfilePage() {
   }
 
   const handleSignOut = async () => {
+    if (isSigningOut) return;
     await signOut();
   };
 
@@ -115,11 +115,12 @@ export default function ProfilePage() {
         </h1>
         <button
           onClick={handleSignOut}
+          disabled={isSigningOut}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all"
           style={{ color: 'var(--color-danger)' }}
         >
           <LogOut size={16} />
-          Sign Out
+          {isSigningOut ? 'Signing Out...' : 'Sign Out'}
         </button>
       </div>
 

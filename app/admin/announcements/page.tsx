@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { A, ACard, EmptyState, GhostBtn, LoadingSkeleton, PageHeader, PrimaryBtn } from '@/lib/admin-ui';
@@ -16,6 +16,7 @@ interface AdminAnnouncement {
 
 export default function AdminAnnouncementsPage() {
   const { profile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -27,7 +28,6 @@ export default function AdminAnnouncementsPage() {
   }, []);
 
   async function loadAnnouncements() {
-    const supabase = createClient();
     const { data } = await supabase
       .from('announcements')
       .select('*')
@@ -49,8 +49,6 @@ export default function AdminAnnouncementsPage() {
   async function createAnnouncement(e: React.FormEvent) {
     e.preventDefault();
     if (!profile) return;
-
-    const supabase = createClient();
 
     // Create announcement
     const { error } = await supabase.from('announcements').insert({
@@ -80,7 +78,6 @@ export default function AdminAnnouncementsPage() {
   }
 
   async function deleteAnnouncement(id: string) {
-    const supabase = createClient();
     const { error } = await supabase.from('announcements').delete().eq('id', id);
     if (error) {
       toast.error('Failed to delete');

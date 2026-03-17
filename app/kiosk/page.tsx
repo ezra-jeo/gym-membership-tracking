@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase"
 import { type CheckInResult } from "@/lib/engagement-hooks"
 import { Input } from "@/components/ui/input"
@@ -73,6 +73,7 @@ function isKioskCheckoutResult(value: unknown): value is KioskCheckoutResult {
 }
 
 export default function KioskPage() {
+  const supabase = useMemo(() => createClient(), [])
   const [mode, setMode] = useState<KioskMode>("qr")
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<
@@ -92,6 +93,7 @@ export default function KioskPage() {
   const [scanStatus, setScanStatus] = useState<"initializing" | "scanning" | "processing" | "error">("initializing")
   const scannerRef = useRef<Html5QrcodeType | null>(null)
   const isProcessingRef = useRef(false)
+  const isRefreshingCheckedInRef = useRef(false)
 
   useEffect(() => {
     loadCheckedIn()
@@ -100,17 +102,23 @@ export default function KioskPage() {
   }, [])
 
   async function loadCheckedIn() {
-    const supabase = createClient()
-    const { data, error } = await supabase.rpc("kiosk_get_checked_in")
-    if (data && !error) {
-      setCheckedIn(
-        (data as { attendance_id: string; member_id: string; member_name: string; check_in: string }[]).map((d) => ({
-          attendanceId: d.attendance_id,
-          memberId: d.member_id,
-          memberName: d.member_name,
-          checkIn: d.check_in,
-        }))
-      )
+    if (isRefreshingCheckedInRef.current) return
+
+    isRefreshingCheckedInRef.current = true
+    try {
+      const { data, error } = await supabase.rpc("kiosk_get_checked_in")
+      if (data && !error) {
+        setCheckedIn(
+          (data as { attendance_id: string; member_id: string; member_name: string; check_in: string }[]).map((d) => ({
+            attendanceId: d.attendance_id,
+            memberId: d.member_id,
+            memberName: d.member_name,
+            checkIn: d.check_in,
+          }))
+        )
+      }
+    } finally {
+      isRefreshingCheckedInRef.current = false
     }
   }
 
@@ -184,8 +192,6 @@ export default function KioskPage() {
   }, [mode, startScanner])
 
   async function handleQrScan(qrCode: string) {
-    const supabase = createClient()
-
     const { data, error } = await supabase.rpc("kiosk_checkin", { p_qr_code: qrCode })
 
     if (error) {
@@ -243,7 +249,6 @@ export default function KioskPage() {
   }
 
   async function handleManualCheckIn(memberId: string, memberName: string) {
-    const supabase = createClient()
     try {
       const { data, error } = await supabase.rpc("kiosk_checkin_by_member", { p_member_id: memberId })
       if (error) throw error
@@ -284,7 +289,6 @@ export default function KioskPage() {
   }
 
   async function handleManualCheckOut(memberId: string) {
-    const supabase = createClient()
     const { data: openRow } = await supabase.rpc("kiosk_get_checked_in")
     const entry = (openRow as { attendance_id: string; member_id: string; member_name: string; check_in: string }[] | null)
       ?.find((r) => r.member_id === memberId)
@@ -321,7 +325,6 @@ export default function KioskPage() {
   async function handleSearch() {
     const q = query.trim()
     if (!q) return
-    const supabase = createClient()
 
     const { data, error } = await supabase.rpc("kiosk_search_members", { p_query: q })
     if (error) { toast.error("Search failed."); return }

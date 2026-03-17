@@ -153,48 +153,66 @@ export type Database = {
           amenities: string[] | null
           brand_color: string | null
           code: string
+          cover_path: string | null
           cover_url: string | null
           created_at: string | null
           description: string | null
+          directions: string | null
           id: string
+          logo_path: string | null
           logo_url: string | null
+          map_embed_url: string | null
           name: string
           operating_hours: Json | null
           phone: string | null
+          pricing_packages: Json | null
           social_links: Json | null
           tagline: string | null
+          team_members: Json | null
         }
         Insert: {
           address?: string | null
           amenities?: string[] | null
           brand_color?: string | null
           code: string
+          cover_path?: string | null
           cover_url?: string | null
           created_at?: string | null
           description?: string | null
+          directions?: string | null
           id?: string
+          logo_path?: string | null
           logo_url?: string | null
+          map_embed_url?: string | null
           name: string
           operating_hours?: Json | null
           phone?: string | null
+          pricing_packages?: Json | null
           social_links?: Json | null
           tagline?: string | null
+          team_members?: Json | null
         }
         Update: {
           address?: string | null
           amenities?: string[] | null
           brand_color?: string | null
           code?: string
+          cover_path?: string | null
           cover_url?: string | null
           created_at?: string | null
           description?: string | null
+          directions?: string | null
           id?: string
+          logo_path?: string | null
           logo_url?: string | null
+          map_embed_url?: string | null
           name?: string
           operating_hours?: Json | null
           phone?: string | null
+          pricing_packages?: Json | null
           social_links?: Json | null
           tagline?: string | null
+          team_members?: Json | null
         }
         Relationships: []
       }
@@ -658,6 +676,10 @@ export type Database = {
           operating_hours: Json | null
           amenities: string[] | null
           social_links: Json | null
+          team_members: Json | null
+          pricing_packages: Json | null
+          map_embed_url: string | null
+          directions: string | null
           member_count: number
           is_published: boolean
         } | null

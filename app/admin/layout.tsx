@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { NotificationsPanel } from '@/components/notifications-panel';
-import { LoadingScreen } from '@/components/ui/loading-screen';
+import { LoadingScreen, Spinner } from '@/components/ui/loading-screen';
 import {
   LayoutDashboard,
   Users,
@@ -52,15 +52,19 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, profile, isLoading, signOut } = useAuth();
+  const { user, profile, isLoading, isSigningOut, signOut } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [gymName, setGymName] = useState<string | null>(null);
 
   useEffect(() => {
     if (isLoading) return;
-    // signOut() handles redirect to /login itself — don't duplicate here
-    // Only redirect unauthorized roles
-    if (user && profile && !['owner', 'admin', 'staff'].includes(profile.role)) {
+    if (!user || !profile) {
+      router.replace('/login');
+      return;
+    }
+
+    if (!['owner', 'admin', 'staff'].includes(profile.role)) {
       router.replace('/member');
     }
   }, [user, profile, isLoading, router]);
@@ -68,7 +72,6 @@ export default function AdminLayout({
   // Fetch gym name once profile (and gymId) is available
   useEffect(() => {
     if (!profile?.gymId) return;
-    const supabase = createClient();
     supabase
       .from('gyms')
       .select('name')
@@ -77,11 +80,12 @@ export default function AdminLayout({
       .then(({ data }) => {
         if (data?.name) setGymName(data.name);
       });
-  }, [profile?.gymId]);
+  }, [profile?.gymId, supabase]);
 
   if (isLoading || !user || !profile) return <LoadingScreen />;
 
   const handleLogout = async () => {
+    if (isSigningOut) return;
     await signOut();
   };
 
@@ -181,7 +185,8 @@ export default function AdminLayout({
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-start gap-3 px-4 py-3 rounded-md text-sm font-medium transition-all"
+            disabled={isSigningOut}
+            className="w-full flex items-center justify-start gap-3 px-4 py-3 rounded-md text-sm font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             style={{
               color: 'var(--color-danger)',
               backgroundColor: 'rgba(224, 92, 92, 0.1)',
@@ -189,8 +194,8 @@ export default function AdminLayout({
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(224, 92, 92, 0.2)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(224, 92, 92, 0.1)'; }}
           >
-            <LogOut size={20} />
-            Logout
+            {isSigningOut ? <Spinner size={18} color="var(--color-danger)" /> : <LogOut size={20} />}
+            {isSigningOut ? 'Logging out...' : 'Logout'}
           </button>
         </div>
       </aside>
@@ -244,10 +249,11 @@ export default function AdminLayout({
             <Button
               onClick={handleLogout}
               variant="destructive"
+              disabled={isSigningOut}
               className="w-full justify-start gap-3 mt-4"
             >
-              <LogOut size={20} />
-              Logout
+              {isSigningOut ? <Spinner size={16} color="currentColor" /> : <LogOut size={20} />}
+              {isSigningOut ? 'Logging out...' : 'Logout'}
             </Button>
           </div>
         )}

@@ -1,11 +1,12 @@
 import { createClient } from "./supabase"
 
+const supabase = createClient()
+
 export async function updateStreak(memberId: string): Promise<{
   currentStreak: number
   bestStreak: number
   isNewBest: boolean
 }> {
-  const supabase = createClient()
   const today = new Date().toISOString().split("T")[0]
 
   // maybeSingle — new members won't have a streak row yet
@@ -63,7 +64,6 @@ export async function updateStreak(memberId: string): Promise<{
 }
 
 export async function getStreak(memberId: string) {
-  const supabase = createClient()
   const { data } = await supabase
     .from("streaks")
     .select("*")

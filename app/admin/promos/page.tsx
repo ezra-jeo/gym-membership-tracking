@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { A, ACard, EmptyState, LoadingSkeleton, PageHeader, PrimaryBtn } from '@/lib/admin-ui'
@@ -73,7 +73,7 @@ const EMPTY_FORM = {
 
 export default function PromosPage() {
   const { profile } = useAuth()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const [promos, setPromos] = useState<Promo[]>([])
   const [plans, setPlans] = useState<Plan[]>([])

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
@@ -14,6 +14,8 @@ type GymSearchResult = {
 
 export function GymFinderSection() {
   const supabase = useMemo(() => createClient(), []);
+  const cacheRef = useRef<Map<string, GymSearchResult[]>>(new Map());
+  const requestIdRef = useRef(0);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GymSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -21,22 +23,34 @@ export function GymFinderSection() {
   useEffect(() => {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
+      requestIdRef.current += 1;
       setResults([]);
       setIsLoading(false);
       return;
     }
 
+    const cacheKey = trimmed.toLowerCase();
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      setResults(cached);
+      setIsLoading(false);
+      return;
+    }
+
     let isCancelled = false;
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
 
     const timeout = setTimeout(async () => {
       const { data, error } = await supabase.rpc('search_gyms', { p_query: trimmed });
-      if (isCancelled) return;
+      if (isCancelled || requestId !== requestIdRef.current) return;
 
       if (error) {
         setResults([]);
       } else {
-        setResults(((data ?? []) as GymSearchResult[]).slice(0, 5));
+        const nextResults = ((data ?? []) as GymSearchResult[]).slice(0, 5);
+        cacheRef.current.set(cacheKey, nextResults);
+        setResults(nextResults);
       }
       setIsLoading(false);
     }, 300);
@@ -122,7 +136,7 @@ export function GymFinderSection() {
                       )}
                     </div>
                     <Link
-                      href={`/gym/${gym.code}`}
+                      href={`/gym/${encodeURIComponent(gym.code)}`}
                       className="text-sm font-medium whitespace-nowrap"
                       style={{ color: 'var(--color-primary)' }}
                     >

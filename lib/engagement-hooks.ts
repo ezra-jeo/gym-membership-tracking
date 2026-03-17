@@ -1,6 +1,8 @@
 import { createClient } from "./supabase"
 import { updateStreak } from "./streaks"
 
+const supabase = createClient()
+
 export interface CheckInResult {
   status: "checked_in" | "checked_out"
   attendanceId: string
@@ -18,8 +20,6 @@ export interface CheckInResult {
  * If open session → check out.
  */
 export async function handleScan(memberId: string): Promise<CheckInResult> {
-  const supabase = createClient()
-
   // Fetch member's gym_id — needed for RLS-compliant inserts
   const { data: memberProfile } = await supabase
     .from("profiles")
@@ -96,7 +96,6 @@ export async function handleScan(memberId: string): Promise<CheckInResult> {
 }
 
 async function postCheckInFeedItem(memberId: string, gymId: string | null) {
-  const supabase = createClient()
   const { data: profile } = await supabase
     .from("profiles")
     .select("name")
@@ -136,7 +135,6 @@ async function postStreakMilestoneFeedItem(
   gymId: string | null,
   streak: number
 ) {
-  const supabase = createClient()
   const { data: profile } = await supabase
     .from("profiles")
     .select("name")

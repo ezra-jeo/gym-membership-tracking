@@ -25,37 +25,39 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // Public routes — no auth needed (checked before getUser to avoid unnecessary auth calls)
-  const publicRoutes = ["/", "/landing", "/login", "/signup", "/signup/member", "/signup/admin"]
-  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"))
+  const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
+  const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
+  const isAuthRoute = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/signup/")
 
-  // Kiosk and public gym pages are accessible without auth
-  if (pathname.startsWith("/kiosk") || pathname.startsWith("/gym")) {
+  // Public pages should not pay auth/profile lookup cost.
+  if (isGymOrKioskRoute || isMarketingRoute) {
     return supabaseResponse
+  }
+
+  if (isAuthRoute) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) return supabaseResponse
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, status, gym_id")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (!profile || profile.status === "pending" || profile.status === "rejected") {
+      return supabaseResponse
+    }
+
+    const redirectTo = profile.role === "member" ? "/member" : "/admin"
+    return NextResponse.redirect(new URL(redirectTo, request.url))
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser()
-
-  if (isPublicRoute) {
-    if (user && (pathname === "/login" || pathname === "/signup")) {
-      // Use maybeSingle — profile may not exist yet if trigger hasn't fired
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, status, gym_id")
-        .eq("id", user.id)
-        .maybeSingle()
-
-      if (!profile || profile.status === "pending" || profile.status === "rejected") {
-        return supabaseResponse
-      }
-
-      const redirectTo = profile.role === "member" ? "/member" : "/admin"
-      return NextResponse.redirect(new URL(redirectTo, request.url))
-    }
-    return supabaseResponse
-  }
 
   // All other routes require auth
   if (!user) {

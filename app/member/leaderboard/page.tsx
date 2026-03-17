@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import type { LeaderboardEntry } from '@/lib/types';
@@ -11,6 +11,8 @@ type LeaderboardCategory = 'workouts' | 'longest_member' | 'week_streak';
 
 export default function LeaderboardPage() {
   const { profile } = useAuth();
+  const supabase = useMemo(() => createClient(), []);
+  const leaderboardCacheRef = useRef<Partial<Record<LeaderboardCategory, LeaderboardEntry[]>>>({});
   const [category, setCategory] = useState<LeaderboardCategory>('workouts');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,11 +20,19 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     loadLeaderboard();
-  }, [category]);
+  }, [category, profile?.id, supabase]);
 
   async function loadLeaderboard() {
+    const cached = leaderboardCacheRef.current[category];
+    if (cached) {
+      setEntries(cached);
+      const cachedEntry = cached.find((e) => e.memberId === profile?.id);
+      setMyRank(cachedEntry?.rank ?? null);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
-    const supabase = createClient();
 
     type Row = { member_id: string; member_name: string; avatar_url: string | null; value: number }
     let rows: Row[] = []
@@ -45,6 +55,8 @@ export default function LeaderboardPage() {
       value:      Number(row.value),
       rank:       i + 1,
     }))
+
+    leaderboardCacheRef.current[category] = leaderboard;
 
     setEntries(leaderboard)
     const myEntry = leaderboard.find((e) => e.memberId === profile?.id)
