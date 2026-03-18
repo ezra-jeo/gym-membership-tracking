@@ -82,17 +82,29 @@ export default function AdminLayout({
       });
   }, [profile?.gymId, supabase]);
 
+  const visibleNavItems = useMemo(
+    () =>
+      NAV_ITEMS.filter((item) => {
+        if (item.ownerOnly) return profile?.role === 'owner';
+        return true;
+      }),
+    [profile?.role]
+  );
+
+  // Prefetch admin routes so tab switches feel instant in poor networks.
+  useEffect(() => {
+    if (!user || !profile) return;
+    visibleNavItems.forEach(({ href }) => {
+      router.prefetch(href);
+    });
+  }, [router, visibleNavItems, user, profile]);
+
   if (isLoading || !user || !profile) return <LoadingScreen />;
 
   const handleLogout = async () => {
     if (isSigningOut) return;
     await signOut();
   };
-
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    if (item.ownerOnly) return profile.role === 'owner';
-    return true;
-  });
 
   const displayName = gymName ?? 'Stren';
   const displayInitial = displayName.charAt(0).toUpperCase();
