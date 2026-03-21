@@ -92,63 +92,81 @@ export function LandingNav() {
       {menuOpen && (
         <div
           id="nav-menu-panel"
-          className="fixed inset-0 z-40 flex flex-col"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.98)',
-            backdropFilter: 'blur(16px)',
-          }}
+          className="fixed inset-0 z-40"
+          role="dialog"
+          aria-modal="true"
         >
-          <div className="h-20" />
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setMenuOpen(false)}
+            className="absolute inset-0"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.6)',
+              backdropFilter: 'blur(6px)',
+            }}
+          />
 
-          <div className="flex-1 flex flex-col justify-between px-8 lg:px-16 py-8">
-            <div className="flex flex-col gap-1">
-              {menuLinks.map((link) => (
-                <a
-                  key={link.label}
-                  href={link.href}
-                  onClick={() => {
-                    track('nav_link_click', { target: link.label });
-                    setMenuOpen(false);
-                  }}
-                  className="block rounded-lg px-4 py-4 text-lg font-medium transition-all duration-150 hover:bg-black/5"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
-                  {link.label}
-                </a>
-              ))}
+          <div
+            className="relative h-full w-[min(32rem,50vw)] border-r"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.98)',
+              backdropFilter: 'blur(16px)',
+              borderColor: 'var(--color-surface)',
+            }}
+          >
+            <div className="h-20" />
 
-              <div className="my-4 border-t" style={{ borderColor: 'var(--color-surface)' }} />
+            <div className="flex h-[calc(100%-5rem)] flex-col justify-between px-8 py-8 lg:px-12">
+              <div className="flex flex-col gap-1">
+                {menuLinks.map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.href}
+                    onClick={() => {
+                      track('nav_link_click', { target: link.label });
+                      setMenuOpen(false);
+                    }}
+                    className="block rounded-lg px-4 py-4 text-lg font-medium transition-all duration-150 hover:bg-black/5"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    {link.label}
+                  </a>
+                ))}
 
-              <div className="flex flex-col sm:flex-row gap-3 px-4">
-                <Link
-                  href="/login"
-                  onClick={() => setMenuOpen(false)}
-                  className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-200 hover:scale-105"
-                  style={{
-                    backgroundColor: 'var(--color-primary)',
-                    color: '#FFFFFF',
-                    boxShadow: '0 4px 24px rgba(212, 149, 106, 0.35)',
-                  }}
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/signup"
-                  onClick={() => setMenuOpen(false)}
-                  className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest border-2 transition-all duration-200 hover:scale-105"
-                  style={{
-                    borderColor: 'var(--color-surface)',
-                    color: 'var(--color-text-primary)',
-                  }}
-                >
-                  Sign Up
-                </Link>
+                <div className="my-4 border-t" style={{ borderColor: 'var(--color-surface)' }} />
+
+                <div className="flex flex-col gap-3 px-4">
+                  <Link
+                    href="/login"
+                    onClick={() => setMenuOpen(false)}
+                    className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-200 hover:scale-105"
+                    style={{
+                      backgroundColor: 'var(--color-primary)',
+                      color: '#FFFFFF',
+                      boxShadow: '0 4px 24px rgba(212, 149, 106, 0.35)',
+                    }}
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setMenuOpen(false)}
+                    className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest border-2 transition-all duration-200 hover:scale-105"
+                    style={{
+                      borderColor: 'var(--color-surface)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  >
+                    Sign Up
+                  </Link>
+                </div>
               </div>
-            </div>
 
-            <p className="text-xs tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-              powered by Stren
-            </p>
+              <p className="text-xs tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                powered by Stren
+              </p>
+            </div>
           </div>
         </div>
       )}
