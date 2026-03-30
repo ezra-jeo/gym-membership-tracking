@@ -73,9 +73,7 @@ export function LandingNav() {
           </button>
 
           <Link href="/landing" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-            <div className="h-8 w-8 relative">
-              <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-            </div>
+            <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
             <span
               className="text-xl font-bold transition-colors duration-300"
               style={{
