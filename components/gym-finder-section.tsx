@@ -14,7 +14,6 @@ type GymSearchResult = {
 
 export function GymFinderSection() {
   const supabase = useMemo(() => createClient(), []);
-  const cacheRef = useRef<Map<string, GymSearchResult[]>>(new Map());
   const requestIdRef = useRef(0);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GymSearchResult[]>([]);
@@ -25,14 +24,6 @@ export function GymFinderSection() {
     if (trimmed.length < 2) {
       requestIdRef.current += 1;
       setResults([]);
-      setIsLoading(false);
-      return;
-    }
-
-    const cacheKey = trimmed.toLowerCase();
-    const cached = cacheRef.current.get(cacheKey);
-    if (cached) {
-      setResults(cached);
       setIsLoading(false);
       return;
     }
@@ -49,7 +40,6 @@ export function GymFinderSection() {
         setResults([]);
       } else {
         const nextResults = ((data ?? []) as GymSearchResult[]).slice(0, 5);
-        cacheRef.current.set(cacheKey, nextResults);
         setResults(nextResults);
       }
       setIsLoading(false);

@@ -19,6 +19,7 @@ const UPLOAD_TIMEOUT_MS = 90000;
 const CLEANUP_DELAY_MS = 30000;
 const CLEANUP_LIST_TIMEOUT_MS = 20000;
 const CLEANUP_REMOVE_TIMEOUT_MS = 30000;
+const REVALIDATE_TIMEOUT_MS = 8000;
 
 type HoursState = Record<(typeof DAYS)[number], string>;
 type SocialState = { facebook: string; instagram: string; website: string };
@@ -145,6 +146,8 @@ export default function GymProfilePage() {
   const [pricingPackages, setPricingPackages] = useState<PricingPackageForm[]>([]);
   const [mapEmbedUrl, setMapEmbedUrl] = useState('');
   const [directions, setDirections] = useState('');
+
+  const hasTagline = tagline.trim().length > 0;
 
   const cleanupTimerRef = useRef<number | null>(null);
   const cleanupInProgressRef = useRef(false);
@@ -671,6 +674,11 @@ export default function GymProfilePage() {
       return;
     }
 
+    if (isPublished && !hasTagline) {
+      toast.error('Add a tagline before publishing your gym page.');
+      return;
+    }
+
     const normalizedColor = brandColor.trim().toUpperCase();
     if (!isValidHex(normalizedColor)) {
       setBrandColorError('Brand color must be a valid #RRGGBB value.');
@@ -755,11 +763,25 @@ export default function GymProfilePage() {
     if (!code) return;
 
     try {
-      const response = await fetch('/api/admin/revalidate-gym', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const response = await withTimeout(
+        fetch('/api/admin/revalidate-gym', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ code }),
+        }),
+        REVALIDATE_TIMEOUT_MS,
+        'Gym page revalidation timed out.',
+      );
 
       if (!response.ok) {
         const details = await response.text();
@@ -836,12 +858,18 @@ export default function GymProfilePage() {
                 Public visibility
               </p>
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                Toggle whether your gym page is publicly visible.
+                Toggle whether your gym page is publicly visible. A tagline is required before your page can be published.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setIsPublished((prev) => !prev)}
+              onClick={() => {
+                if (!isPublished && !hasTagline) {
+                  toast.error('Add a tagline before publishing your gym page.');
+                  return;
+                }
+                setIsPublished((prev) => !prev);
+              }}
               className="rounded-full px-3 py-1 text-xs font-semibold"
               style={{
                 backgroundColor: isPublished ? 'var(--color-success)' : 'var(--color-surface)',
@@ -858,6 +886,9 @@ export default function GymProfilePage() {
             <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Tagline</label>
             <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{tagline.length}/120</span>
           </div>
+          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+            Tagline is required to publish your gym page.
+          </p>
           <input
             value={tagline}
             maxLength={120}

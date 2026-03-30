@@ -3,8 +3,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase"
+import { withTimeout } from "@/lib/async-guard"
 import type { User } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
+
+const SIGN_OUT_TIMEOUT_MS = 10000
+const NAVIGATION_FAILSAFE_MS = 2000
 
 interface AuthContextValue {
   user: User | null
@@ -217,11 +221,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsSigningOut(true)
     const client = getClient()
     try {
-      const { error } = await client.auth.signOut()
+      const { error } = await withTimeout(
+        client.auth.signOut(),
+        SIGN_OUT_TIMEOUT_MS,
+        "Sign-out request timed out.",
+      )
       if (error) throw error
     } catch {
       // Fallback: clear local session state even if remote signout fails.
-      await client.auth.signOut({ scope: "local" })
+      await withTimeout(
+        client.auth.signOut({ scope: "local" }),
+        SIGN_OUT_TIMEOUT_MS,
+        "Local sign-out timed out.",
+      )
     } finally {
       setUser(null)
       setProfile(null)
@@ -229,6 +241,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsSigningOut(false)
       router.replace("/login")
       router.refresh()
+      window.setTimeout(() => {
+        if (window.location.pathname !== "/login") {
+          window.location.assign("/login")
+        }
+      }, NAVIGATION_FAILSAFE_MS)
     }
   }
 

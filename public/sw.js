@@ -1,9 +1,11 @@
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE = `stren-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `stren-runtime-${CACHE_VERSION}`;
 const NAVIGATION_CACHE = `stren-pages-${CACHE_VERSION}`;
 
 const APP_SHELL_URLS = ['/landing', '/login', '/manifest.webmanifest', '/stren-logo.png'];
+const PUBLIC_NAV_ROUTES = new Set(['/', '/landing', '/login']);
+const NETWORK_ONLY_PREFIXES = ['/admin', '/member', '/kiosk', '/signup', '/api'];
 
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image']);
 
@@ -63,12 +65,27 @@ self.addEventListener('fetch', (event) => {
 
   const requestUrl = new URL(request.url);
   const isSameOrigin = requestUrl.origin === self.location.origin;
+  const isNetworkOnlyRoute = NETWORK_ONLY_PREFIXES.some((prefix) =>
+    requestUrl.pathname.startsWith(prefix)
+  );
 
   if (!isSameOrigin) {
     return;
   }
 
+  if (isNetworkOnlyRoute) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   if (request.mode === 'navigate') {
+    const isPublicRoute = PUBLIC_NAV_ROUTES.has(requestUrl.pathname);
+
+    if (!isPublicRoute) {
+      event.respondWith(fetch(request));
+      return;
+    }
+
     event.respondWith(
       (async () => {
         const cache = await caches.open(NAVIGATION_CACHE);
@@ -93,41 +110,6 @@ self.addEventListener('fetch', (event) => {
           }
 
           return Response.error();
-        }
-      })()
-    );
-    return;
-  }
-
-  if (requestUrl.pathname.startsWith('/api/')) {
-    event.respondWith(
-      (async () => {
-        const cache = await caches.open(RUNTIME_CACHE);
-
-        try {
-          const networkResponse = await fetch(request);
-
-          if (isCacheableResponse(networkResponse)) {
-            cache.put(request, networkResponse.clone());
-          }
-
-          return networkResponse;
-        } catch {
-          const cachedResponse = await cache.match(request);
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-
-          return new Response(
-            JSON.stringify({
-              error: 'offline',
-              message: 'No cached response available while offline.',
-            }),
-            {
-              status: 503,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
         }
       })()
     );
@@ -168,19 +150,8 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     (async () => {
-      const cachedResponse = await caches.match(request);
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
       try {
-        const networkResponse = await fetch(request);
-
-        if (isCacheableResponse(networkResponse)) {
-          event.waitUntil(cacheResponse(RUNTIME_CACHE, request, networkResponse));
-        }
-
-        return networkResponse;
+        return await fetch(request);
       } catch {
         return Response.error();
       }
