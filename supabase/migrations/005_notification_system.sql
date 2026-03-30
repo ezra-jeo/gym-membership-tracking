@@ -6,6 +6,25 @@
 -- ============================================
 
 -- ────────────────────────────────────────────
+-- 0. FIX EXISTING NOTIFICATIONS TABLE CONSTRAINT
+--    The existing notifications.type CHECK constraint 
+--    needs to include new notification types
+-- ────────────────────────────────────────────
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check 
+CHECK (type = ANY (ARRAY[
+  'member_pending'::text, 
+  'member_checkin'::text, 
+  'membership_expiring'::text,
+  'membership_expiry_7d'::text,
+  'membership_expiry_0d'::text,
+  'streak_milestone'::text,
+  'inactivity_nudge'::text,
+  'announcement'::text
+]));
+
+-- ────────────────────────────────────────────
 -- 1. NOTIFICATION TYPE ENUM
 -- ────────────────────────────────────────────
 CREATE TYPE notification_type AS ENUM (
