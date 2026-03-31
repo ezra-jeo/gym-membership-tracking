@@ -27,19 +27,42 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createServerSupabaseClient();
+
+  let currentUser: { id: string } | null = null;
+
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
+  if (!userError && user) {
+    currentUser = { id: user.id };
+  } else {
+    const authHeader = request.headers.get('authorization') ?? '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length).trim()
+      : '';
+
+    if (token) {
+      const {
+        data: { user: bearerUser },
+        error: bearerError,
+      } = await supabase.auth.getUser(token);
+
+      if (!bearerError && bearerUser) {
+        currentUser = { id: bearerUser.id };
+      }
+    }
+  }
+
+  if (!currentUser) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
-    .eq('id', user.id)
+    .eq('id', currentUser.id)
     .maybeSingle();
 
   if (!profile || !profile.role || !ADMIN_ROLES.has(profile.role)) {

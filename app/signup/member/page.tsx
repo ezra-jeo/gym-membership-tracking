@@ -42,6 +42,38 @@ function MemberSignUpPageContent() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefillAttemptedRef = useRef(false);
 
+  async function fallbackSearchGyms(query: string) {
+    const trimmed = query.trim();
+    const { data, error } = await supabase
+      .from('gyms')
+      .select('id, name, code, address')
+      .or(`name.ilike.%${trimmed}%,code.ilike.%${trimmed}%`)
+      .order('name', { ascending: true })
+      .limit(10);
+
+    if (error) {
+      console.error('Gym fallback search error:', error.message);
+      return [];
+    }
+
+    return data ?? [];
+  }
+
+  async function fallbackGetGymByCode(code: string) {
+    const { data, error } = await supabase
+      .from('gyms')
+      .select('id, name, code')
+      .eq('code', code)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Gym fallback by-code error:', error.message);
+      return null;
+    }
+
+    return data;
+  }
+
   useEffect(() => {
     if (prefillAttemptedRef.current) return;
     prefillAttemptedRef.current = true;
@@ -53,11 +85,20 @@ function MemberSignUpPageContent() {
     let isCancelled = false;
 
     async function prefillGym() {
-      const { data } = await supabase.rpc('get_gym_by_code', { p_code: gymCode });
+      const { data, error } = await supabase.rpc('get_gym_by_code', { p_code: gymCode });
       if (isCancelled) return;
 
       if (data && data.is_published) {
         setSelectedGym({ id: data.id, name: data.name });
+        setStep('details');
+        return;
+      }
+
+      if (error || !data) {
+        const fallbackGym = await fallbackGetGymByCode(gymCode);
+        if (isCancelled || !fallbackGym) return;
+
+        setSelectedGym({ id: fallbackGym.id, name: fallbackGym.name });
         setStep('details');
       }
     }
@@ -78,7 +119,22 @@ function MemberSignUpPageContent() {
       setSearching(true);
       const { data, error } = await supabase
         .rpc('search_gyms', { p_query: query });
-      if (error) console.error('Gym search error:', error.message);
+
+      if (error) {
+        console.error('Gym search error:', error.message);
+        const fallbackGyms = await fallbackSearchGyms(query);
+        setGyms(fallbackGyms);
+        setSearching(false);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        const fallbackGyms = await fallbackSearchGyms(query);
+        setGyms(fallbackGyms);
+        setSearching(false);
+        return;
+      }
+
       setGyms(data ?? []);
       setSearching(false);
     }, 300);

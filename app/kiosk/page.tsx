@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase"
+import { withTimeout } from "@/lib/async-guard"
 import { type CheckInResult } from "@/lib/engagement-hooks"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ import {
 } from "lucide-react"
 
 const SCANNER_ELEMENT_ID = "kiosk-qr-reader"
+const KIOSK_RPC_TIMEOUT_MS = 10000
 
 type KioskMode = "qr" | "search"
 
@@ -91,9 +93,13 @@ export default function KioskPage() {
   const [checkedIn, setCheckedIn] = useState<CheckedInEntry[]>([])
   const [scanResult, setScanResult] = useState<(CheckInResult & { memberName: string }) | null>(null)
   const [scanStatus, setScanStatus] = useState<"initializing" | "scanning" | "processing" | "error">("initializing")
+  const [isSearching, setIsSearching] = useState(false)
+  const [actionPendingByMember, setActionPendingByMember] = useState<Record<string, "checkin" | "checkout">>({})
+  const [isLoadingCheckedIn, setIsLoadingCheckedIn] = useState(false)
   const scannerRef = useRef<Html5QrcodeType | null>(null)
   const isProcessingRef = useRef(false)
   const isRefreshingCheckedInRef = useRef(false)
+  const refreshQueuedRef = useRef(false)
 
   useEffect(() => {
     loadCheckedIn()
@@ -102,11 +108,19 @@ export default function KioskPage() {
   }, [])
 
   async function loadCheckedIn() {
-    if (isRefreshingCheckedInRef.current) return
+    if (isRefreshingCheckedInRef.current) {
+      refreshQueuedRef.current = true
+      return
+    }
 
     isRefreshingCheckedInRef.current = true
+    setIsLoadingCheckedIn(true)
     try {
-      const { data, error } = await supabase.rpc("kiosk_get_checked_in")
+      const { data, error } = await withTimeout(
+        supabase.rpc("kiosk_get_checked_in"),
+        KIOSK_RPC_TIMEOUT_MS,
+        "Loading checked-in members timed out.",
+      )
       if (data && !error) {
         setCheckedIn(
           (data as { attendance_id: string; member_id: string; member_name: string; check_in: string }[]).map((d) => ({
@@ -117,8 +131,16 @@ export default function KioskPage() {
           }))
         )
       }
+    } catch {
+      toast.error("Could not refresh checked-in members. Please try again.")
     } finally {
+      setIsLoadingCheckedIn(false)
       isRefreshingCheckedInRef.current = false
+
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false
+        void loadCheckedIn()
+      }
     }
   }
 
@@ -192,7 +214,11 @@ export default function KioskPage() {
   }, [mode, startScanner])
 
   async function handleQrScan(qrCode: string) {
-    const { data, error } = await supabase.rpc("kiosk_checkin", { p_qr_code: qrCode })
+    const { data, error } = await withTimeout(
+      supabase.rpc("kiosk_checkin", { p_qr_code: qrCode }),
+      KIOSK_RPC_TIMEOUT_MS,
+      "QR check-in timed out.",
+    )
 
     if (error) {
       console.error("[Kiosk] RPC error:", error)
@@ -242,18 +268,29 @@ export default function KioskPage() {
       const durationText =
         typeof data.duration_min === "number" ? ` (${data.duration_min} min)` : ""
       toast.success(`${memberName} checked out!${durationText}`)
+      setCheckedIn((prev) => prev.filter((c) => c.attendanceId !== data.attendance_id))
     }
 
-    loadCheckedIn()
+    window.setTimeout(() => {
+      void loadCheckedIn()
+    }, 150)
     setTimeout(() => setScanResult(null), 5000)
   }
 
-  async function handleManualCheckIn(memberId: string, memberName: string) {
+  async function handleManualByMember(memberId: string, memberName: string, pendingKind: "checkin" | "checkout") {
+    if (actionPendingByMember[memberId]) return
+    setActionPendingByMember((prev) => ({ ...prev, [memberId]: pendingKind }))
+
     try {
-      const { data, error } = await supabase.rpc("kiosk_checkin_by_member", { p_member_id: memberId })
+      const { data, error } = await withTimeout(
+        supabase.rpc("kiosk_checkin_by_member", { p_member_id: memberId }),
+        KIOSK_RPC_TIMEOUT_MS,
+        pendingKind === "checkout" ? "Manual check-out timed out." : "Manual check-in timed out.",
+      )
+
       if (error) throw error
       if (isKioskErrorResult(data)) {
-        toast.error(typeof data.message === "string" ? data.message : "Check-in failed.")
+        toast.error(typeof data.message === "string" ? data.message : "Kiosk action failed.")
         return
       }
 
@@ -272,78 +309,90 @@ export default function KioskPage() {
 
       if (data.action === "checked_in") {
         toast.success(`${memberName} checked in!`)
+        setCheckedIn((prev) => {
+          const next = prev.filter((c) => c.memberId !== memberId && c.attendanceId !== data.attendance_id)
+          return [{ attendanceId: data.attendance_id, memberId, memberName, checkIn: new Date().toISOString() }, ...next]
+        })
       } else {
-        const durationText =
-          typeof data.duration_min === "number" ? ` (${data.duration_min} min)` : ""
+        const durationText = typeof data.duration_min === "number" ? ` (${data.duration_min} min)` : ""
         toast.success(`${memberName} checked out!${durationText}`)
+        toast.success(`See you next time, ${memberName}!`)
+        setCheckedIn((prev) => prev.filter((c) => c.memberId !== memberId && c.attendanceId !== data.attendance_id))
       }
 
-      loadCheckedIn()
+      window.setTimeout(() => {
+        void loadCheckedIn()
+      }, 150)
+
       setQuery("")
       setResults([])
       setSearched(false)
       setTimeout(() => setScanResult(null), 5000)
-    } catch {
-      toast.error("Check-in failed.")
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : pendingKind === "checkout"
+          ? "Check-out failed."
+          : "Check-in failed."
+      toast.error(message)
+    } finally {
+      setActionPendingByMember((prev) => {
+        const next = { ...prev }
+        delete next[memberId]
+        return next
+      })
     }
   }
 
-  async function handleManualCheckOut(memberId: string) {
-    const { data: openRow } = await supabase.rpc("kiosk_get_checked_in")
-    const entry = (openRow as { attendance_id: string; member_id: string; member_name: string; check_in: string }[] | null)
-      ?.find((r) => r.member_id === memberId)
+  async function handleManualCheckIn(memberId: string, memberName: string) {
+    await handleManualByMember(memberId, memberName, "checkin")
+  }
 
-    if (!entry) {
-      toast.error("No open session found.")
-      return
-    }
-
-    try {
-      const { data, error } = await supabase.rpc("kiosk_checkout", { p_attendance_id: entry.attendance_id })
-      if (error) throw error
-      if (isKioskErrorResult(data)) {
-        toast.error("Session not found.")
-        return
-      }
-
-      if (!isKioskCheckoutResult(data)) {
-        toast.error("Unexpected checkout response.")
-        return
-      }
-
-      if (typeof data.duration_min === "number") {
-        toast.success(`Checked out! (${data.duration_min} min)`)
-      } else {
-        toast.success("Checked out!")
-      }
-      loadCheckedIn()
-    } catch {
-      toast.error("Check-out failed.")
-    }
+  async function handleManualCheckOut(memberId: string, memberName: string, _knownAttendanceId?: string) {
+    await handleManualByMember(memberId, memberName, "checkout")
   }
 
   async function handleSearch() {
+    if (isSearching) return
+
     const q = query.trim()
     if (!q) return
 
-    const { data, error } = await supabase.rpc("kiosk_search_members", { p_query: q })
-    if (error) { toast.error("Search failed."); return }
+    setIsSearching(true)
 
-    setResults(
-      ((data ?? []) as {
-        id: string; name: string; email: string; contact_number: string | null;
-        membership_status: string | null; plan_name: string | null; end_date: string | null;
-      }[]).map((p) => ({
-        id: p.id,
-        name: p.name,
-        email: p.email,
-        contactNumber: p.contact_number,
-        membershipStatus: p.membership_status ?? "none",
-        planName: p.plan_name ?? "No plan",
-        endDate: p.end_date ?? "—",
-      }))
-    )
-    setSearched(true)
+    try {
+      const { data, error } = await withTimeout(
+        supabase.rpc("kiosk_search_members", { p_query: q }),
+        KIOSK_RPC_TIMEOUT_MS,
+        "Member search timed out.",
+      )
+
+      if (error) {
+        toast.error("Search failed.")
+        return
+      }
+
+      setResults(
+        ((data ?? []) as {
+          id: string; name: string; email: string; contact_number: string | null;
+          membership_status: string | null; plan_name: string | null; end_date: string | null;
+        }[]).map((p) => ({
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          contactNumber: p.contact_number,
+          membershipStatus: p.membership_status ?? "none",
+          planName: p.plan_name ?? "No plan",
+          endDate: p.end_date ?? "—",
+        }))
+      )
+      setSearched(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Search failed."
+      toast.error(message)
+    } finally {
+      setIsSearching(false)
+    }
   }
 
   const isCurrentlyCheckedIn = (memberId: string) =>
@@ -491,8 +540,8 @@ export default function KioskPage() {
                 }}
               />
             </div>
-            <Button type="submit" style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-              Search
+              <Button type="submit" disabled={isSearching} style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+              {isSearching ? "Searching..." : "Search"}
             </Button>
           </form>
 
@@ -545,21 +594,27 @@ export default function KioskPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleManualCheckOut(m.id)}
+                          onClick={() => handleManualCheckOut(
+                            m.id,
+                            m.name,
+                            checkedIn.find((c) => c.memberId === m.id)?.attendanceId,
+                          )}
+                          disabled={!!actionPendingByMember[m.id]}
                           className="gap-1.5 border-red-500/40 bg-transparent text-red-400 hover:bg-red-500/20 hover:text-red-300"
                         >
                           <LogOut className="h-4 w-4" />
-                          Check Out
+                          {actionPendingByMember[m.id] === "checkout" ? "Checking Out..." : "Check Out"}
                         </Button>
                       ) : (
                         <Button
                           size="sm"
                           onClick={() => handleManualCheckIn(m.id, m.name)}
+                          disabled={!!actionPendingByMember[m.id]}
                           className="gap-1.5"
                           style={{ backgroundColor: "var(--color-primary)", color: "white" }}
                         >
                           <LogIn className="h-4 w-4" />
-                          Check In
+                          {actionPendingByMember[m.id] === "checkin" ? "Checking In..." : "Check In"}
                         </Button>
                       )}
                     </div>
@@ -584,7 +639,7 @@ export default function KioskPage() {
             className="ml-1"
             style={{ borderColor: "rgba(212,149,106,0.4)", color: "var(--color-primary)" }}
           >
-            {checkedIn.length}
+            {isLoadingCheckedIn ? "..." : checkedIn.length}
           </Badge>
         </h2>
         {checkedIn.length === 0 ? (
@@ -615,11 +670,12 @@ export default function KioskPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleManualCheckOut(c.memberId)}
+                  onClick={() => handleManualCheckOut(c.memberId, c.memberName, c.attendanceId)}
+                  disabled={!!actionPendingByMember[c.memberId]}
                   className="gap-1.5 border-red-500/40 bg-transparent text-red-400 hover:bg-red-500/20 hover:text-red-300"
                 >
                   <LogOut className="h-3.5 w-3.5" />
-                  Out
+                  {actionPendingByMember[c.memberId] === "checkout" ? "Out..." : "Out"}
                 </Button>
               </div>
             ))}

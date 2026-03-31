@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
+import { PwaRegister } from '@/components/pwa-register'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
   title: 'Stren',
   description: 'Gym Membership Tracking',
   generator: 'v0.app',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
       {
@@ -41,6 +43,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
         </AuthProvider>
+        <PwaRegister />
         <Analytics />
       </body>
     </html>
