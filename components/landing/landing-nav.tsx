@@ -45,47 +45,62 @@ export function LandingNav() {
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-          scrolled ? 'shadow-sm' : ''
-        }`}
+        className="fixed top-0 left-0 right-0 z-50 transition-all duration-500"
         style={{
           backgroundColor: scrolled ? 'rgba(255,255,255,0.95)' : 'transparent',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid var(--color-surface)' : '1px solid rgba(255,255,255,0.12)',
         }}
       >
-        <div className="relative mx-auto flex max-w-7xl items-center justify-center px-6 py-4 lg:px-8">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="absolute left-6 lg:left-8 flex items-center justify-center w-12 h-12 rounded-lg transition-colors duration-200 hover:bg-black/5"
-            style={{ color: scrolled ? 'var(--color-text-primary)' : '#FFFFFF' }}
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={menuOpen}
-            aria-controls="nav-menu-panel"
-          >
-            <span
-              className="transition-transform duration-200"
-              style={{ transform: menuOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-            >
-              {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </span>
-          </button>
-
-          <Link href="/landing" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-            <div className="h-8 w-8 relative">
-              <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
+        <div
+          className={`mx-auto max-w-7xl px-6 py-4 lg:px-8 transition-all duration-500 ${
+            scrolled ? '' : ''
+          }`}
+          style={{
+            borderBottom: scrolled
+              ? '1px solid var(--color-surface)'
+              : '1px solid rgba(255,255,255,0.12)',
+          }}
+        >
+          <div className="flex items-center">
+            {/* Hamburger - left */}
+            <div className="flex-1 flex justify-start">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center justify-center w-10 h-10 -ml-2 rounded-lg transition-colors duration-200 hover:bg-black/5"
+                style={{ color: scrolled ? 'var(--color-text-primary)' : '#FFFFFF' }}
+                aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={menuOpen}
+                aria-controls="nav-menu-panel"
+              >
+                <span
+                  className="transition-transform duration-200"
+                  style={{ transform: menuOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                >
+                  {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                </span>
+              </button>
             </div>
-            <span
-              className="text-xl font-bold transition-colors duration-300"
-              style={{
-                color: scrolled ? 'var(--color-primary)' : '#FFFFFF',
-                fontFamily: 'var(--font-heading)',
-              }}
-            >
-              Stren
-            </span>
-          </Link>
+
+            {/* Logo - center */}
+            <Link href="/landing" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
+              <div className="h-8 w-8 relative">
+                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
+              </div>
+              <span
+                className="text-xl font-bold transition-colors duration-300"
+                style={{
+                  color: scrolled ? 'var(--color-primary)' : '#FFFFFF',
+                  fontFamily: 'var(--font-heading)',
+                }}
+              >
+                Stren
+              </span>
+            </Link>
+
+            {/* Spacer - right (balances layout) */}
+            <div className="flex-1" />
+          </div>
         </div>
       </nav>
 
