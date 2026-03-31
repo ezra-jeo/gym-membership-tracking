@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -46,9 +46,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient({
-      supabaseUrl,
-      supabaseKey,
+    const supabase = createSupabaseClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: false,
       },
