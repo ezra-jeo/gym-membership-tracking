@@ -1,0 +1,21 @@
+name: Daily Notifications
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 9am UTC every day
+  workflow_dispatch:     # Allow manual trigger from GitHub UI
+
+jobs:
+  notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process daily notifications
+        run: |
+          curl -X POST \
+            "${{ secrets.DEPLOYMENT_URL }}/api/cron/notifications" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -v
+      
+      - name: Check response
+        if: failure()
+        run: echo "Notification job failed - check GitHub Actions logs"

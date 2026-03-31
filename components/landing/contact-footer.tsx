@@ -19,9 +19,7 @@ export function ContactFooter() {
         <div className="grid md:grid-cols-3 gap-12 mb-12">
           <div>
             <Link href="/landing" className="inline-flex items-center gap-2 mb-4">
-              <div className="h-8 w-8 relative">
-                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-              </div>
+              <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
               <span
                 className="text-xl font-bold"
                 style={{
