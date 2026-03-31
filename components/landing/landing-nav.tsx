@@ -51,7 +51,7 @@ export function LandingNav() {
         style={{
           backgroundColor: scrolled ? 'rgba(255,255,255,0.95)' : 'transparent',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid var(--color-surface)' : '1px solid transparent',
+          borderBottom: scrolled ? '1px solid var(--color-surface)' : '1px solid rgba(255,255,255,0.12)',
         }}
       >
         <div className="relative mx-auto flex max-w-7xl items-center justify-center px-6 py-4 lg:px-8">
