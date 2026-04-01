@@ -5,9 +5,9 @@ import Link from 'next/link';
 
 export function CTAOverlay() {
   return (
-    <section className="relative py-32 lg:py-40 px-6 lg:px-12 overflow-hidden">
+    <section className="relative h-screen flex items-center justify-center px-6 lg:px-12 overflow-hidden">
       <Image
-        src="/owner-success.jpg"
+        src="/Landing-CTA.jpg"
         alt="Gym owner"
         fill
         className="object-cover"

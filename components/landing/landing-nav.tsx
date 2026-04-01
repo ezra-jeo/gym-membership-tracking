@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
@@ -9,23 +9,32 @@ import { track } from '@vercel/analytics';
 const menuLinks = [
   { label: 'Getting Started', href: '#features' },
   { label: 'About Stren', href: '#about' },
+  { label: 'Find a Location', href: '#gym-finder' },
   { label: 'Contact Us', href: '#contact' },
   { label: 'FAQ', href: '#' },
-  { label: 'Product Roadmap', href: '#' },
 ];
 
 export function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleScroll = useCallback(() => {
-    setScrolled(window.scrollY > 20);
-  }, []);
-
   useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+
+    const handleSwiperChange = (e: CustomEvent<{ index: number }>) => {
+      setScrolled(e.detail.index > 0);
+    };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
+    window.addEventListener('swiper-slide-change', handleSwiperChange as EventListener);
+    
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('swiper-slide-change', handleSwiperChange as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';
@@ -42,132 +51,178 @@ export function LandingNav() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [menuOpen]);
 
+  const closeMenu = () => setMenuOpen(false);
+
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-          scrolled ? 'shadow-sm' : ''
-        }`}
+        className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
         style={{
-          backgroundColor: scrolled ? 'rgba(255,255,255,0.95)' : 'transparent',
+          backgroundColor: scrolled ? 'rgba(255,255,255,0.97)' : 'transparent',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid var(--color-surface)' : '1px solid transparent',
         }}
       >
-        <div className="relative mx-auto flex max-w-7xl items-center justify-center px-6 py-4 lg:px-8">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="absolute left-6 lg:left-8 flex items-center justify-center w-12 h-12 rounded-lg transition-colors duration-200 hover:bg-black/5"
-            style={{ color: scrolled ? 'var(--color-text-primary)' : '#FFFFFF' }}
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={menuOpen}
-            aria-controls="nav-menu-panel"
+        <div className="mx-auto max-w-[1400px] px-6 lg:px-10">
+          <div 
+            className="flex items-center justify-between h-16 transition-all duration-300"
+            style={{
+              borderBottom: scrolled 
+                ? '1px solid var(--color-surface)' 
+                : '1px solid rgba(255,255,255,0.1)',
+            }}
           >
-            <span
-              className="transition-transform duration-200"
-              style={{ transform: menuOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-            >
-              {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </span>
-          </button>
+            {/* Left: Hamburger + Find a Location */}
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setMenuOpen(true)}
+                className="flex items-center justify-center w-10 h-10 -ml-2 rounded-lg transition-colors duration-200 hover:bg-black/5"
+                style={{ color: scrolled ? 'var(--color-text-primary)' : '#FFFFFF' }}
+                aria-label="Open menu"
+                aria-expanded={menuOpen}
+                aria-controls="nav-menu-panel"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setMenuOpen(true)}
+                className="hidden sm:block text-sm font-medium transition-colors duration-200 hover:opacity-70"
+                style={{ color: scrolled ? 'var(--color-text-secondary)' : 'rgba(255,255,255,0.8)' }}
+              >
+                Find a Location
+              </button>
+            </div>
 
-          <Link href="/landing" className="flex items-center gap-2" onClick={() => setMenuOpen(false)}>
-            <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
-            <span
-              className="text-xl font-bold transition-colors duration-300"
-              style={{
-                color: scrolled ? 'var(--color-primary)' : '#FFFFFF',
-                fontFamily: 'var(--font-heading)',
-              }}
-            >
-              Stren
-            </span>
-          </Link>
+            {/* Center: Logo */}
+            <Link href="/landing" className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2">
+              <div className="h-8 w-8 relative">
+                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" loading="eager" priority />
+              </div>
+              <span
+                className="text-xl font-bold transition-colors duration-300"
+                style={{
+                  color: scrolled ? 'var(--color-primary)' : '#FFFFFF',
+                  fontFamily: 'var(--font-heading)',
+                }}
+              >
+                Stren
+              </span>
+            </Link>
+
+            {/* Right: empty for balance */}
+            <div className="w-24" />
+          </div>
         </div>
       </nav>
 
-      {menuOpen && (
+      {/* Menu Panel */}
+      <div
+        id="nav-menu-panel"
+        className={`fixed inset-0 z-[60] transition-all duration-300 ${
+          menuOpen ? 'visible' : 'invisible'
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={!menuOpen}
+      >
+        {/* Backdrop */}
         <div
-          id="nav-menu-panel"
-          className="fixed inset-0 z-40"
-          role="dialog"
-          aria-modal="true"
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            menuOpen ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={closeMenu}
+          onKeyDown={(e) => e.key === 'Enter' && closeMenu()}
+          role="button"
+          tabIndex={0}
+          aria-label="Close menu"
+        />
+
+        {/* Slide-in Panel */}
+        <div
+          className={`absolute top-0 left-0 h-full w-[min(22rem,90vw)] bg-white shadow-2xl transition-transform duration-300 ease-out ${
+            menuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
         >
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={() => setMenuOpen(false)}
-            className="absolute inset-0"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.6)',
-              backdropFilter: 'blur(6px)',
-            }}
-          />
-
-          <div
-            className="relative h-full w-[min(32rem,50vw)] border-r"
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.98)',
-              backdropFilter: 'blur(16px)',
-              borderColor: 'var(--color-surface)',
-            }}
-          >
-            <div className="h-20" />
-
-            <div className="flex h-[calc(100%-5rem)] flex-col justify-between px-8 py-8 lg:px-12">
-              <div className="flex flex-col gap-1">
-                {menuLinks.map((link) => (
-                  <a
-                    key={link.label}
-                    href={link.href}
-                    onClick={() => {
-                      track('nav_link_click', { target: link.label });
-                      setMenuOpen(false);
-                    }}
-                    className="block rounded-lg px-4 py-4 text-lg font-medium transition-all duration-150 hover:bg-black/5"
-                    style={{ color: 'var(--color-text-primary)' }}
-                  >
-                    {link.label}
-                  </a>
-                ))}
-
-                <div className="my-4 border-t" style={{ borderColor: 'var(--color-surface)' }} />
-
-                <div className="flex flex-col gap-3 px-4">
-                  <Link
-                    href="/login"
-                    onClick={() => setMenuOpen(false)}
-                    className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-200 hover:scale-105"
-                    style={{
-                      backgroundColor: 'var(--color-primary)',
-                      color: '#FFFFFF',
-                      boxShadow: '0 4px 24px rgba(212, 149, 106, 0.35)',
-                    }}
-                  >
-                    Sign In
-                  </Link>
-                  <Link
-                    href="/signup"
-                    onClick={() => setMenuOpen(false)}
-                    className="inline-flex items-center justify-center px-7 py-3.5 rounded-full font-semibold text-sm uppercase tracking-widest border-2 transition-all duration-200 hover:scale-105"
-                    style={{
-                      borderColor: 'var(--color-surface)',
-                      color: 'var(--color-text-primary)',
-                    }}
-                  >
-                    Sign Up
-                  </Link>
-                </div>
+          {/* Header with close button */}
+          <div className="flex items-center justify-between px-5 h-16 border-b" style={{ borderColor: 'var(--color-surface)' }}>
+            <Link href="/landing" className="flex items-center gap-2" onClick={closeMenu}>
+              <div className="h-7 w-7 relative">
+                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
               </div>
+              <span
+                className="text-lg font-bold"
+                style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-heading)' }}
+              >
+                Stren
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={closeMenu}
+              className="flex items-center justify-center w-10 h-10 rounded-lg transition-colors duration-200 hover:bg-gray-100"
+              aria-label="Close menu"
+            >
+              <X className="h-5 w-5 text-gray-700" />
+            </button>
+          </div>
 
-              <p className="text-xs tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-                powered by Stren
+          {/* Menu content */}
+          <div className="flex flex-col h-[calc(100%-4rem)] overflow-y-auto">
+            <div className="flex-1 py-4">
+              {menuLinks.map((link) => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  onClick={() => {
+                    track('nav_link_click', { target: link.label });
+                    closeMenu();
+                  }}
+                  className="block px-6 py-4 text-base font-medium transition-colors duration-150 hover:bg-gray-50"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  {link.label}
+                </a>
+              ))}
+
+              <div className="my-4 mx-6 border-t" style={{ borderColor: 'var(--color-surface)' }} />
+
+              <div className="px-6 space-y-3">
+                <Link
+                  href="/login"
+                  onClick={closeMenu}
+                  className="block w-full text-center px-6 py-3.5 rounded-full font-semibold text-sm uppercase tracking-wider transition-all duration-200 hover:scale-[1.02]"
+                  style={{
+                    backgroundColor: 'var(--color-primary)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={closeMenu}
+                  className="block w-full text-center px-6 py-3.5 rounded-full font-semibold text-sm uppercase tracking-wider border-2 transition-all duration-200 hover:scale-[1.02]"
+                  style={{
+                    borderColor: 'var(--color-surface)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                >
+                  Create Account
+                </Link>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t" style={{ borderColor: 'var(--color-surface)' }}>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                © 2024 Stren. All rights reserved.
               </p>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </>
   );
 }
