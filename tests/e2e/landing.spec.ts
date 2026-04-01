@@ -14,10 +14,15 @@ test("landing exposes core CTAs", async ({ page }) => {
   
   // Open the navigation menu to access Sign In and Create Account
   await page.getByRole("button", { name: /open menu/i }).click();
-  await expect(page.getByRole("link", { name: /sign in/i }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: /create account/i })).toBeVisible();
   
-  // Close menu and check gym finder search
-  await page.getByRole("button", { name: /close menu/i }).click();
+  // Use the menu panel locator for scoped selections
+  const menuPanel = page.locator("#nav-menu-panel");
+  await expect(menuPanel.getByRole("link", { name: /sign in/i })).toBeVisible();
+  await expect(menuPanel.getByRole("link", { name: /create account/i })).toBeVisible();
+  
+  // Close menu using the X button (not the backdrop overlay)
+  await menuPanel.locator("button[aria-label='Close menu']").click();
+  
+  // Check gym finder search is visible
   await expect(page.getByPlaceholder(/search by gym name or code/i)).toBeVisible();
 });
