@@ -30,7 +30,17 @@ export function FullPageSwiper({ children, onSlideChange }: FullPageSwiperProps)
       setIsMobile(window.innerWidth < 768);
     };
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    
+    // Listen for next slide event from hero
+    const handleNextSlide = () => {
+      swiperRef.current?.slideNext();
+    };
+    window.addEventListener('swiper-next-slide', handleNextSlide);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('swiper-next-slide', handleNextSlide);
+    };
   }, []);
 
   const handleSlideChange = useCallback((swiper: SwiperType) => {
@@ -71,7 +81,7 @@ export function FullPageSwiper({ children, onSlideChange }: FullPageSwiperProps)
       onSlideChange={handleSlideChange}
       direction="vertical"
       slidesPerView={1}
-      speed={500}
+      speed={450}
       mousewheel={{
         sensitivity: 0.5,
         thresholdDelta: 30,

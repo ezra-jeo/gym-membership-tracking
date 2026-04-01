@@ -1,14 +1,27 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { LandingNav } from '@/components/landing/landing-nav';
 import { LandingHero } from '@/components/landing/landing-hero';
 import { AboutSection } from '@/components/landing/about-section';
 import { FeatureAccordion } from '@/components/landing/feature-accordion';
 import { CTAOverlay } from '@/components/landing/cta-overlay';
 import { ContactFooter } from '@/components/landing/contact-footer';
-import { FullPageSwiper } from '@/components/landing/full-page-swiper';
 import { GymFinderSection } from '@/components/gym-finder-section';
 import '@/styles/swiper-custom.css';
+
+// Lazy load Swiper to reduce initial bundle
+const FullPageSwiper = dynamic(
+  () => import('@/components/landing/full-page-swiper').then(mod => ({ default: mod.FullPageSwiper })),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-screen">
+        <LandingHero />
+      </div>
+    ),
+  }
+);
 
 export default function LandingPage() {
   return (

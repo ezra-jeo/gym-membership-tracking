@@ -55,6 +55,7 @@ export function GymFinderSection() {
 
   return (
     <section
+      id="gym-finder"
       className="py-16 px-6 md:px-12 flex-1 flex flex-col justify-center"
       style={{ backgroundColor: 'var(--color-white)' }}
     >

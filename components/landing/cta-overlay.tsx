@@ -7,7 +7,7 @@ export function CTAOverlay() {
   return (
     <section className="relative h-screen flex items-center justify-center px-6 lg:px-12 overflow-hidden">
       <Image
-        src="/owner-success.jpg"
+        src="/Landing-CTA.jpg"
         alt="Gym owner"
         fill
         className="object-cover"

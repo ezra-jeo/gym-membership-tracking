@@ -21,7 +21,7 @@ const features: Feature[] = [
     title: 'Effortless Check-In',
     subtitle: 'QR Scanning',
     description: 'Members scan in seconds. You see attendance in real-time.',
-    image: '/hero-checkin.jpg',
+    image: '/checkin.jpg',
     details: [
       {
         heading: 'Instant QR Scan',
@@ -42,7 +42,7 @@ const features: Feature[] = [
     title: 'Payment Clarity',
     subtitle: 'Never Chase Dues Again',
     description: 'Know exactly who has paid, who is overdue, and your revenue at a glance.',
-    image: '/hero-dashboard.jpg',
+    image: '/StrenDashboard.PNG',
     details: [
       {
         heading: 'Overdue Alerts',
@@ -63,7 +63,7 @@ const features: Feature[] = [
     title: 'Member Profiles',
     subtitle: 'Everything in One Place',
     description: 'Plans, payments, attendance — one profile tells the whole story.',
-    image: '/hero-members.jpg',
+    image: '/landingmembers.jpg',
     details: [
       {
         heading: 'Complete Overview',
@@ -146,6 +146,7 @@ export function FeatureAccordion() {
                       alt={feature.title}
                       fill
                       className="object-cover"
+                      loading="eager"
                     />
                     <div
                       className="absolute inset-0"
@@ -267,6 +268,7 @@ export function FeatureAccordion() {
                   style={{
                     transform: isExpanded ? 'scale(1.05)' : 'scale(1)',
                   }}
+                  loading="eager"
                 />
 
                 {/* Overlay */}
