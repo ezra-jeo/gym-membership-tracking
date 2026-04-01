@@ -61,7 +61,7 @@ export default function GymSelectPage() {
     return () => { document.body.style.overflow = ''; };
   }, [qrModalOpen]);
 
-  // Gym search with debounce (reusing existing logic)
+  // Gym search with debounce
   useEffect(() => {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
@@ -95,17 +95,12 @@ export default function GymSelectPage() {
   }, [query, supabase]);
 
   const handleGymSelect = (gym: GymSearchResult | SavedGym) => {
-    // Save to localStorage
     const toSave: SavedGym = { id: gym.id, name: gym.name, code: gym.code };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-    
-    // Navigate to login with gym
     router.push(`/login?gym=${encodeURIComponent(gym.code)}`);
   };
 
-  const handleEnterSearchMode = () => {
-    setSearchMode(true);
-  };
+  const handleEnterSearchMode = () => setSearchMode(true);
 
   const handleExitSearchMode = () => {
     setSearchMode(false);
@@ -115,69 +110,80 @@ export default function GymSelectPage() {
 
   const showResults = searchMode && query.trim().length >= 2;
 
-  if (!mounted) {
-    return null; // Prevent hydration mismatch
-  }
+  if (!mounted) return null;
 
   return (
     <>
       <div 
-        className="min-h-[100dvh] flex flex-col px-6 py-8 relative overflow-hidden"
+        className="min-h-[100dvh] flex items-center justify-center px-4 py-8 relative overflow-hidden"
         style={{ backgroundColor: 'var(--color-background)' }}
       >
-        {/* Subtle background pattern */}
+        {/* Decorative background elements */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {/* Large decorative circle - top right */}
           <div 
-            className="absolute -top-32 -right-32 w-96 h-96 rounded-full"
+            className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full"
             style={{ 
-              background: 'radial-gradient(circle, var(--color-primary-glow) 0%, transparent 70%)',
-              opacity: 0.6,
+              background: 'radial-gradient(circle, var(--color-primary-glow) 0%, transparent 60%)',
+              opacity: 0.7,
             }}
           />
-          {/* Medium decorative circle - bottom left */}
           <div 
-            className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full"
+            className="absolute -bottom-32 -left-32 w-[400px] h-[400px] rounded-full"
             style={{ 
-              background: 'radial-gradient(circle, var(--color-primary-glow) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, var(--color-primary-glow) 0%, transparent 60%)',
               opacity: 0.5,
             }}
           />
-          {/* Small accent circle - center left */}
           <div 
-            className="absolute top-1/3 -left-16 w-48 h-48 rounded-full"
+            className="absolute top-1/4 -left-20 w-64 h-64 rounded-full"
             style={{ 
               background: 'radial-gradient(circle, var(--color-surface) 0%, transparent 70%)',
-              opacity: 0.4,
+              opacity: 0.6,
             }}
           />
         </div>
 
-        {/* Content wrapper with fade-in */}
-        <div className="relative z-10 flex flex-col flex-1 animate-in fade-in duration-500">
-          {/* Header/Branding Section */}
-          <div className="flex-1 flex flex-col items-center justify-center">
-            {/* Logo with subtle glow */}
+        {/* Main Card Container */}
+        <div 
+          className="relative z-10 w-full max-w-[420px] rounded-3xl p-8 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+          style={{ 
+            backgroundColor: 'var(--color-white)',
+            boxShadow: '0 4px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)',
+          }}
+        >
+          {/* Branding Section */}
+          <div className="flex flex-col items-center text-center mb-10">
+            {/* Logo with circular badge */}
             <div className="relative mb-5">
+              {/* Warm circular badge behind logo */}
               <div 
-                className="absolute inset-0 blur-2xl scale-150"
+                className="absolute inset-0 rounded-full scale-[1.4]"
                 style={{ 
-                  background: 'var(--color-primary-glow)',
-                  opacity: 0.5,
+                  background: 'linear-gradient(135deg, var(--color-primary-glow) 0%, rgba(212, 149, 106, 0.08) 100%)',
                 }}
               />
-              <div className="relative w-[120px] h-[120px]">
+              {/* Subtle glow */}
+              <div 
+                className="absolute inset-0 blur-2xl scale-[2]"
+                style={{ 
+                  background: 'var(--color-primary-glow)',
+                  opacity: 0.4,
+                }}
+              />
+              <div className="relative w-[100px] h-[100px]">
                 <Image
                   src="/stren-logo.png"
                   alt="Stren"
                   fill
-                  className="object-contain drop-shadow-lg"
+                  className="object-contain drop-shadow-md"
                   priority
                 />
               </div>
             </div>
+
+            {/* Title */}
             <h1
-              className="text-4xl font-bold"
+              className="text-3xl font-bold mb-2"
               style={{
                 fontFamily: 'var(--font-heading)',
                 color: 'var(--color-primary)',
@@ -185,23 +191,31 @@ export default function GymSelectPage() {
             >
               Stren
             </h1>
+
+            {/* Tagline */}
+            <p
+              className="text-sm"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Your gym. Your rules.
+            </p>
           </div>
 
           {/* Action Section */}
-          <div className="flex-1 flex flex-col justify-end pb-6">
+          <div className="space-y-3">
             {/* Remembered Gym Button */}
             {rememberedGym && !searchMode && (
               <button
                 type="button"
                 onClick={() => handleGymSelect(rememberedGym)}
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-semibold text-base transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] mb-3"
+                className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-2xl font-semibold text-[15px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
                 style={{
-                  backgroundColor: 'var(--color-primary)',
+                  background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
                   color: 'var(--color-white)',
-                  boxShadow: '0 4px 20px rgba(212, 149, 106, 0.35)',
+                  boxShadow: '0 4px 16px rgba(212, 149, 106, 0.4), inset 0 1px 0 rgba(255,255,255,0.15)',
                 }}
               >
-                <Building2 size={20} />
+                <Building2 size={18} />
                 <span>{rememberedGym.name}</span>
               </button>
             )}
@@ -211,12 +225,11 @@ export default function GymSelectPage() {
               <button
                 type="button"
                 onClick={handleEnterSearchMode}
-                className="w-full px-6 py-4 rounded-2xl font-semibold text-base border-2 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full px-5 py-4 rounded-2xl font-semibold text-[15px] border-2 transition-all duration-200 hover:scale-[1.02] hover:border-[var(--color-primary-light)] active:scale-[0.98]"
                 style={{
                   borderColor: 'var(--color-surface)',
                   backgroundColor: 'var(--color-white)',
                   color: 'var(--color-text-primary)',
-                  boxShadow: '0 2px 12px rgba(0, 0, 0, 0.06)',
                 }}
               >
                 Find your gym
@@ -235,25 +248,23 @@ export default function GymSelectPage() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search by gym name or code"
-                    className="w-full rounded-2xl border-2 pl-11 pr-4 py-4 text-base outline-none transition-all duration-200"
+                    className="w-full rounded-2xl border-2 pl-11 pr-4 py-4 text-[15px] outline-none transition-all duration-200"
                     style={{
-                      backgroundColor: 'var(--color-white)',
+                      backgroundColor: 'var(--color-background)',
                       borderColor: 'var(--color-primary)',
                       color: 'var(--color-text-primary)',
-                      boxShadow: '0 4px 20px rgba(212, 149, 106, 0.15)',
                     }}
                   />
                 </div>
 
                 {/* Search Results */}
                 {showResults && (
-                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                  <div className="space-y-2 max-h-[180px] overflow-y-auto">
                     {isLoading && (
                       <div
-                        className="rounded-2xl border p-4 text-sm"
+                        className="rounded-xl p-3 text-sm"
                         style={{
-                          backgroundColor: 'var(--color-white)',
-                          borderColor: 'var(--color-surface)',
+                          backgroundColor: 'var(--color-background)',
                           color: 'var(--color-text-muted)',
                         }}
                       >
@@ -266,21 +277,18 @@ export default function GymSelectPage() {
                         key={gym.id}
                         type="button"
                         onClick={() => handleGymSelect(gym)}
-                        className="w-full rounded-2xl border p-4 text-left transition-all duration-150 hover:border-[var(--color-primary)] hover:shadow-md active:scale-[0.98]"
-                        style={{
-                          backgroundColor: 'var(--color-white)',
-                          borderColor: 'var(--color-surface)',
-                        }}
+                        className="w-full rounded-xl p-3 text-left transition-all duration-150 hover:bg-[var(--color-primary-glow)] active:scale-[0.98]"
+                        style={{ backgroundColor: 'var(--color-background)' }}
                       >
                         <p
-                          className="text-base font-semibold truncate"
+                          className="text-[15px] font-semibold truncate"
                           style={{ color: 'var(--color-text-primary)' }}
                         >
                           {gym.name}
                         </p>
                         {gym.address && (
                           <p
-                            className="text-sm mt-1 truncate"
+                            className="text-xs mt-0.5 truncate"
                             style={{ color: 'var(--color-text-secondary)' }}
                           >
                             {gym.address}
@@ -291,10 +299,9 @@ export default function GymSelectPage() {
 
                     {!isLoading && results.length === 0 && (
                       <div
-                        className="rounded-2xl border p-4 text-sm"
+                        className="rounded-xl p-3 text-sm"
                         style={{
-                          backgroundColor: 'var(--color-white)',
-                          borderColor: 'var(--color-surface)',
+                          backgroundColor: 'var(--color-background)',
                           color: 'var(--color-text-secondary)',
                         }}
                       >
@@ -304,11 +311,11 @@ export default function GymSelectPage() {
                   </div>
                 )}
 
-                {/* Cancel Search */}
+                {/* Cancel */}
                 <button
                   type="button"
                   onClick={handleExitSearchMode}
-                  className="w-full py-3 text-sm font-medium transition-colors duration-150"
+                  className="w-full py-2 text-sm font-medium transition-colors duration-150 hover:text-[var(--color-text-primary)]"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
                   Cancel
@@ -317,33 +324,44 @@ export default function GymSelectPage() {
             )}
           </div>
 
+          {/* Divider */}
+          {!searchMode && (
+            <div 
+              className="my-6 h-px"
+              style={{ backgroundColor: 'var(--color-surface)' }}
+            />
+          )}
+
           {/* Footer Links */}
           {!searchMode && (
-            <div className="flex items-center justify-center gap-4 pt-4 pb-2">
+            <div className="flex items-center justify-center gap-5">
               <button
                 type="button"
                 onClick={() => setQrModalOpen(true)}
-                className="flex items-center gap-2 text-sm font-medium transition-colors duration-150 hover:opacity-70"
+                className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
                 style={{ color: 'var(--color-text-muted)' }}
               >
                 <QrCode size={16} />
                 <span>QR Login</span>
               </button>
-              <span style={{ color: 'var(--color-light-gray)' }}>|</span>
+              <div 
+                className="w-px h-4"
+                style={{ backgroundColor: 'var(--color-surface)' }}
+              />
               <button
                 type="button"
-                className="flex items-center gap-2 text-sm font-medium transition-colors duration-150 hover:opacity-70"
+                className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
                 style={{ color: 'var(--color-text-muted)' }}
               >
                 <HelpCircle size={16} />
-                <span>Need help?</span>
+                <span>Help</span>
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* QR Login Modal - Slide up from bottom */}
+      {/* QR Login Modal */}
       <div
         className={`fixed inset-0 z-50 transition-all duration-300 ${
           qrModalOpen ? 'visible' : 'invisible'
@@ -358,17 +376,17 @@ export default function GymSelectPage() {
           onClick={() => setQrModalOpen(false)}
         />
 
-        {/* Modal Panel - Slide up */}
+        {/* Modal Panel */}
         <div
           className={`absolute inset-x-0 bottom-0 transition-transform duration-300 ease-out ${
             qrModalOpen ? 'translate-y-0' : 'translate-y-full'
           }`}
           style={{ 
-            backgroundColor: 'var(--color-background)',
+            backgroundColor: 'var(--color-white)',
             borderTopLeftRadius: '24px',
             borderTopRightRadius: '24px',
-            minHeight: '85vh',
-            maxHeight: '95vh',
+            minHeight: '70vh',
+            maxHeight: '90vh',
           }}
         >
           {/* Drag handle */}
@@ -382,7 +400,7 @@ export default function GymSelectPage() {
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-3">
             <h2
-              className="text-xl font-semibold"
+              className="text-lg font-semibold"
               style={{
                 fontFamily: 'var(--font-heading)',
                 color: 'var(--color-text-primary)',
@@ -393,27 +411,26 @@ export default function GymSelectPage() {
             <button
               type="button"
               onClick={() => setQrModalOpen(false)}
-              className="flex items-center justify-center w-10 h-10 rounded-full transition-colors duration-150 hover:bg-black/5"
+              className="flex items-center justify-center w-9 h-9 rounded-full transition-colors duration-150 hover:bg-black/5"
               style={{ color: 'var(--color-text-secondary)' }}
             >
-              <X size={22} />
+              <X size={20} />
             </button>
           </div>
 
           {/* Content */}
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8 py-12">
+          <div className="flex flex-col items-center justify-center text-center px-8 py-10">
             <div 
-              className="w-28 h-28 rounded-full flex items-center justify-center mb-8"
+              className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
               style={{ 
-                backgroundColor: 'var(--color-primary-glow)',
-                boxShadow: '0 8px 32px rgba(212, 149, 106, 0.2)',
+                background: 'linear-gradient(135deg, var(--color-primary-glow) 0%, rgba(212, 149, 106, 0.15) 100%)',
               }}
             >
-              <QrCode size={56} style={{ color: 'var(--color-primary)' }} />
+              <QrCode size={48} style={{ color: 'var(--color-primary)' }} />
             </div>
             
             <h3
-              className="text-2xl font-bold mb-4"
+              className="text-xl font-bold mb-3"
               style={{
                 fontFamily: 'var(--font-heading)',
                 color: 'var(--color-text-primary)',
@@ -423,7 +440,7 @@ export default function GymSelectPage() {
             </h3>
             
             <p
-              className="text-base leading-relaxed max-w-xs mb-8"
+              className="text-sm leading-relaxed max-w-[280px] mb-6"
               style={{ color: 'var(--color-text-secondary)' }}
             >
               Scan your gym&apos;s QR code to instantly log in. This feature is currently in development.
