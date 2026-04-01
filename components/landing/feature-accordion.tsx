@@ -42,7 +42,7 @@ const features: Feature[] = [
     title: 'Payment Clarity',
     subtitle: 'Never Chase Dues Again',
     description: 'Know exactly who has paid, who is overdue, and your revenue at a glance.',
-    image: '/StrenDashboard.PNG',
+    image: '/strendashboard.jpg',
     details: [
       {
         heading: 'Overdue Alerts',

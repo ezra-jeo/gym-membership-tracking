@@ -47,7 +47,7 @@ const features: Feature[] = [
       'Revenue summary at a glance',
       'Payment history per member',
     ],
-    image: '/StrenDashboard.PNG',
+    image: '/strendashboard.jpg',
     imageAlt: 'Payment tracking dashboard',
   },
   {
