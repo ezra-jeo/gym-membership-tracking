@@ -115,7 +115,7 @@ export default function GymSelectPage() {
   return (
     <>
       <div 
-        className="min-h-[100dvh] flex items-center justify-center px-4 py-8 relative overflow-hidden"
+        className="min-h-[100dvh] flex flex-col md:items-center md:justify-center px-6 py-8 md:px-4 relative overflow-hidden"
         style={{ backgroundColor: 'var(--color-background)' }}
       >
         {/* Decorative background elements */}
@@ -135,7 +135,7 @@ export default function GymSelectPage() {
             }}
           />
           <div 
-            className="absolute top-1/4 -left-20 w-64 h-64 rounded-full"
+            className="absolute top-1/4 -left-20 w-64 h-64 rounded-full hidden md:block"
             style={{ 
               background: 'radial-gradient(circle, var(--color-surface) 0%, transparent 70%)',
               opacity: 0.6,
@@ -143,221 +143,241 @@ export default function GymSelectPage() {
           />
         </div>
 
-        {/* Main Card Container */}
+        {/* 
+          Main Container
+          - Mobile: No card, full-bleed layout (Canvas-style)
+          - Desktop: White card with shadow
+        */}
         <div 
-          className="relative z-10 w-full max-w-[420px] rounded-3xl p-8 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+          className="relative z-10 w-full max-w-[420px] flex flex-col flex-1 md:flex-initial md:rounded-3xl md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-500"
           style={{ 
-            backgroundColor: 'var(--color-white)',
-            boxShadow: '0 4px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)',
+            // Desktop-only card styles applied via media query in className
           }}
         >
-          {/* Branding Section */}
-          <div className="flex flex-col items-center text-center mb-10">
-            {/* Logo with circular badge */}
-            <div className="relative mb-5">
-              {/* Warm circular badge behind logo */}
-              <div 
-                className="absolute inset-0 rounded-full scale-[1.4]"
-                style={{ 
-                  background: 'linear-gradient(135deg, var(--color-primary-glow) 0%, rgba(212, 149, 106, 0.08) 100%)',
-                }}
-              />
-              {/* Subtle glow */}
-              <div 
-                className="absolute inset-0 blur-2xl scale-[2]"
-                style={{ 
-                  background: 'var(--color-primary-glow)',
-                  opacity: 0.4,
-                }}
-              />
-              <div className="relative w-[100px] h-[100px]">
-                <Image
-                  src="/stren-logo.png"
-                  alt="Stren"
-                  fill
-                  className="object-contain drop-shadow-md"
-                  priority
+          {/* Desktop-only card background */}
+          <div 
+            className="absolute inset-0 hidden md:block rounded-3xl"
+            style={{ 
+              backgroundColor: 'var(--color-white)',
+              boxShadow: '0 4px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)',
+            }}
+          />
+
+          {/* Content wrapper */}
+          <div className="relative z-10 flex flex-col flex-1 md:flex-initial">
+            {/* Branding Section - positioned in upper area on mobile */}
+            <div className="flex flex-col items-center justify-center text-center pt-20 pb-8 md:pt-0 md:pb-0 md:mb-10">
+              {/* Logo with circular badge */}
+              <div className="relative mb-5">
+                {/* Warm circular badge behind logo */}
+                <div 
+                  className="absolute inset-0 rounded-full scale-[1.4]"
+                  style={{ 
+                    background: 'linear-gradient(135deg, var(--color-primary-glow) 0%, rgba(212, 149, 106, 0.08) 100%)',
+                  }}
                 />
-              </div>
-            </div>
-
-            {/* Title */}
-            <h1
-              className="text-3xl font-bold mb-2"
-              style={{
-                fontFamily: 'var(--font-heading)',
-                color: 'var(--color-primary)',
-              }}
-            >
-              Stren
-            </h1>
-
-            {/* Tagline */}
-            <p
-              className="text-sm"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              Your gym. Your rules.
-            </p>
-          </div>
-
-          {/* Action Section */}
-          <div className="space-y-3">
-            {/* Remembered Gym Button */}
-            {rememberedGym && !searchMode && (
-              <button
-                type="button"
-                onClick={() => handleGymSelect(rememberedGym)}
-                className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-2xl font-semibold text-[15px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-                style={{
-                  background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
-                  color: 'var(--color-white)',
-                  boxShadow: '0 4px 16px rgba(212, 149, 106, 0.4), inset 0 1px 0 rgba(255,255,255,0.15)',
-                }}
-              >
-                <Building2 size={18} />
-                <span>{rememberedGym.name}</span>
-              </button>
-            )}
-
-            {/* Find Your Gym Button / Search Input */}
-            {!searchMode ? (
-              <button
-                type="button"
-                onClick={handleEnterSearchMode}
-                className="w-full px-5 py-4 rounded-2xl font-semibold text-[15px] border-2 transition-all duration-200 hover:scale-[1.02] hover:border-[var(--color-primary-light)] active:scale-[0.98]"
-                style={{
-                  borderColor: 'var(--color-surface)',
-                  backgroundColor: 'var(--color-white)',
-                  color: 'var(--color-text-primary)',
-                }}
-              >
-                Find your gym
-              </button>
-            ) : (
-              <div className="space-y-3">
-                {/* Search Input */}
-                <div className="relative">
-                  <Search
-                    size={18}
-                    className="absolute left-4 top-1/2 -translate-y-1/2"
-                    style={{ color: 'var(--color-text-muted)' }}
-                  />
-                  <input
-                    ref={inputRef}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search by gym name or code"
-                    className="w-full rounded-2xl border-2 pl-11 pr-4 py-4 text-[15px] outline-none transition-all duration-200"
-                    style={{
-                      backgroundColor: 'var(--color-background)',
-                      borderColor: 'var(--color-primary)',
-                      color: 'var(--color-text-primary)',
-                    }}
+                {/* Subtle glow */}
+                <div 
+                  className="absolute inset-0 blur-2xl scale-[2]"
+                  style={{ 
+                    background: 'var(--color-primary-glow)',
+                    opacity: 0.4,
+                  }}
+                />
+                <div className="relative w-[125px] h-[125px] md:w-[100px] md:h-[100px]">
+                  <Image
+                    src="/stren-logo.png"
+                    alt="Stren"
+                    fill
+                    className="object-contain drop-shadow-md"
+                    priority
                   />
                 </div>
+              </div>
 
-                {/* Search Results */}
-                {showResults && (
-                  <div className="space-y-2 max-h-[180px] overflow-y-auto">
-                    {isLoading && (
-                      <div
-                        className="rounded-xl p-3 text-sm"
-                        style={{
-                          backgroundColor: 'var(--color-background)',
-                          color: 'var(--color-text-muted)',
-                        }}
-                      >
-                        Searching gyms...
-                      </div>
-                    )}
+              {/* Title */}
+              <h1
+                className="text-3xl font-bold mb-2"
+                style={{
+                  fontFamily: 'var(--font-heading)',
+                  color: 'var(--color-primary)',
+                }}
+              >
+                Stren
+              </h1>
 
-                    {!isLoading && results.map((gym) => (
-                      <button
-                        key={gym.id}
-                        type="button"
-                        onClick={() => handleGymSelect(gym)}
-                        className="w-full rounded-xl p-3 text-left transition-all duration-150 hover:bg-[var(--color-primary-glow)] active:scale-[0.98]"
-                        style={{ backgroundColor: 'var(--color-background)' }}
-                      >
-                        <p
-                          className="text-[15px] font-semibold truncate"
-                          style={{ color: 'var(--color-text-primary)' }}
-                        >
-                          {gym.name}
-                        </p>
-                        {gym.address && (
-                          <p
-                            className="text-xs mt-0.5 truncate"
-                            style={{ color: 'var(--color-text-secondary)' }}
-                          >
-                            {gym.address}
-                          </p>
-                        )}
-                      </button>
-                    ))}
+              {/* Tagline */}
+              <p
+                className="text-sm"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                Your gym. Your rules.
+              </p>
+            </div>
 
-                    {!isLoading && results.length === 0 && (
-                      <div
-                        className="rounded-xl p-3 text-sm"
-                        style={{
-                          backgroundColor: 'var(--color-background)',
-                          color: 'var(--color-text-secondary)',
-                        }}
-                      >
-                        No gyms found. Try a different name or code.
-                      </div>
-                    )}
-                  </div>
+            {/* Spacer - creates natural gap on mobile, pushes buttons to lower area (not all the way down) */}
+            <div className="flex-1 min-h-[60px] md:hidden" />
+
+            {/* Action Section */}
+            <div className="md:space-y-3 pb-20 md:pb-0">
+              <div className="space-y-3">
+                {/* Remembered Gym Button */}
+                {rememberedGym && !searchMode && (
+                  <button
+                    type="button"
+                    onClick={() => handleGymSelect(rememberedGym)}
+                    className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-2xl font-semibold text-[15px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                    style={{
+                      background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
+                      color: 'var(--color-white)',
+                      boxShadow: '0 4px 16px rgba(212, 149, 106, 0.4), inset 0 1px 0 rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <Building2 size={18} />
+                    <span>{rememberedGym.name}</span>
+                  </button>
                 )}
 
-                {/* Cancel */}
-                <button
-                  type="button"
-                  onClick={handleExitSearchMode}
-                  className="w-full py-2 text-sm font-medium transition-colors duration-150 hover:text-[var(--color-text-primary)]"
-                  style={{ color: 'var(--color-text-muted)' }}
-                >
-                  Cancel
-                </button>
+                {/* Find Your Gym Button / Search Input */}
+                {!searchMode ? (
+                  <button
+                    type="button"
+                    onClick={handleEnterSearchMode}
+                    className="w-full px-5 py-4 rounded-2xl font-semibold text-[15px] border-2 transition-all duration-200 hover:scale-[1.02] hover:border-[var(--color-primary-light)] active:scale-[0.98]"
+                    style={{
+                      borderColor: 'var(--color-surface)',
+                      backgroundColor: 'var(--color-white)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  >
+                    Find your gym
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search
+                        size={18}
+                        className="absolute left-4 top-1/2 -translate-y-1/2"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      />
+                      <input
+                        ref={inputRef}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search by gym name or code"
+                        className="w-full rounded-2xl border-2 pl-11 pr-4 py-4 text-[15px] outline-none transition-all duration-200"
+                        style={{
+                          backgroundColor: 'var(--color-white)',
+                          borderColor: 'var(--color-primary)',
+                          color: 'var(--color-text-primary)',
+                        }}
+                      />
+                    </div>
+
+                    {/* Search Results */}
+                    {showResults && (
+                      <div className="space-y-2 max-h-[180px] overflow-y-auto">
+                        {isLoading && (
+                          <div
+                            className="rounded-xl p-3 text-sm"
+                            style={{
+                              backgroundColor: 'var(--color-white)',
+                              color: 'var(--color-text-muted)',
+                            }}
+                          >
+                            Searching gyms...
+                          </div>
+                        )}
+
+                        {!isLoading && results.map((gym) => (
+                          <button
+                            key={gym.id}
+                            type="button"
+                            onClick={() => handleGymSelect(gym)}
+                            className="w-full rounded-xl p-3 text-left transition-all duration-150 hover:bg-[var(--color-primary-glow)] active:scale-[0.98]"
+                            style={{ backgroundColor: 'var(--color-white)' }}
+                          >
+                            <p
+                              className="text-[15px] font-semibold truncate"
+                              style={{ color: 'var(--color-text-primary)' }}
+                            >
+                              {gym.name}
+                            </p>
+                            {gym.address && (
+                              <p
+                                className="text-xs mt-0.5 truncate"
+                                style={{ color: 'var(--color-text-secondary)' }}
+                              >
+                                {gym.address}
+                              </p>
+                            )}
+                          </button>
+                        ))}
+
+                        {!isLoading && results.length === 0 && (
+                          <div
+                            className="rounded-xl p-3 text-sm"
+                            style={{
+                              backgroundColor: 'var(--color-white)',
+                              color: 'var(--color-text-secondary)',
+                            }}
+                          >
+                            No gyms found. Try a different name or code.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cancel */}
+                    <button
+                      type="button"
+                      onClick={handleExitSearchMode}
+                      className="w-full py-2 text-sm font-medium transition-colors duration-150 hover:text-[var(--color-text-primary)]"
+                      style={{ color: 'var(--color-text-muted)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Divider */}
-          {!searchMode && (
-            <div 
-              className="my-6 h-px"
-              style={{ backgroundColor: 'var(--color-surface)' }}
-            />
-          )}
+              {/* Divider - Desktop only */}
+              {!searchMode && (
+                <div 
+                  className="my-4 h-px hidden md:block"
+                  style={{ backgroundColor: 'var(--color-surface)' }}
+                />
+              )}
 
-          {/* Footer Links */}
-          {!searchMode && (
-            <div className="flex items-center justify-center gap-5">
-              <button
-                type="button"
-                onClick={() => setQrModalOpen(true)}
-                className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
-                style={{ color: 'var(--color-text-muted)' }}
-              >
-                <QrCode size={16} />
-                <span>QR Login</span>
-              </button>
-              <div 
-                className="w-px h-4"
-                style={{ backgroundColor: 'var(--color-surface)' }}
-              />
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
-                style={{ color: 'var(--color-text-muted)' }}
-              >
-                <HelpCircle size={16} />
-                <span>Help</span>
-              </button>
+              {/* Footer Links */}
+              {!searchMode && (
+                <div className="flex items-center justify-center gap-5 pt-3 md:pt-0">
+                  <button
+                    type="button"
+                    onClick={() => setQrModalOpen(true)}
+                    className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  >
+                    <QrCode size={16} />
+                    <span>QR Login</span>
+                  </button>
+                  <div 
+                    className="w-px h-4"
+                    style={{ backgroundColor: 'var(--color-surface)' }}
+                  />
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-sm font-medium transition-all duration-150 hover:text-[var(--color-primary)]"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  >
+                    <HelpCircle size={16} />
+                    <span>Help</span>
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
