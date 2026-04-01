@@ -35,7 +35,11 @@ function isInvalidRefreshTokenError(error: unknown): boolean {
         : ""
 
   const normalized = reason.toLowerCase()
-  return normalized.includes("invalid refresh token") || normalized.includes("refresh token not found")
+  return (
+    normalized.includes("invalid refresh token") ||
+    normalized.includes("refresh token not found") ||
+    normalized.includes("missing refresh token")
+  )
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

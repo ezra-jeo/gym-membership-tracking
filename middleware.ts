@@ -1,6 +1,39 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"  
 
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  if (!error) return false
+
+  const reason = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : ""
+
+  const normalized = reason.toLowerCase()
+  return (
+    normalized.includes("invalid refresh token") ||
+    normalized.includes("refresh token not found") ||
+    normalized.includes("missing refresh token")
+  )
+}
+
+function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
+  const authCookies = request.cookies
+    .getAll()
+    .filter((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"))
+
+  authCookies.forEach((cookie) => {
+    response.cookies.set(cookie.name, "", {
+      path: "/",
+      expires: new Date(0),
+      maxAge: 0,
+    })
+  })
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -35,9 +68,17 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAuthRoute) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    let user = null
+    try {
+      const { data } = await supabase.auth.getUser()
+      user = data.user
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        clearSupabaseAuthCookies(request, supabaseResponse)
+        return supabaseResponse
+      }
+      throw error
+    }
 
     if (!user) return supabaseResponse
 
@@ -55,9 +96,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(redirectTo, request.url))
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/login"
+      const redirect = NextResponse.redirect(url)
+      clearSupabaseAuthCookies(request, redirect)
+      return redirect
+    }
+    throw error
+  }
 
   // All other routes require auth
   if (!user) {
