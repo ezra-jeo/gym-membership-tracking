@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { LoadingScreen } from '@/components/ui/loading-screen';
+import { MemberNotificationsPanel } from '@/components/member-notifications-panel';
 import {
   Home,
   Activity,
@@ -56,7 +57,8 @@ export default function MemberLayout({
             Stren
           </span>
         </Link>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <MemberNotificationsPanel />
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
