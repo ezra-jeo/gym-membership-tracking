@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -12,9 +12,17 @@ import {
   Mail,
   Shield,
   AlertTriangle,
+  Bell,
+  Flame,
+  BellOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageSkeleton } from '@/components/ui/loading-screen';
+
+interface NotificationPreferences {
+  inactivity_nudges_enabled: boolean;
+  streak_notifications_enabled: boolean;
+}
 
 function SettingsRow({
   icon,
@@ -63,6 +71,60 @@ function SettingsRow({
   );
 }
 
+function ToggleRow({
+  icon,
+  label,
+  sublabel,
+  enabled,
+  onToggle,
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel?: string;
+  enabled: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-4 px-4 py-3.5">
+      <div
+        className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          color: 'var(--color-primary)',
+        }}
+      >
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+          {label}
+        </p>
+        {sublabel && (
+          <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{sublabel}</p>
+        )}
+      </div>
+      <button
+        onClick={onToggle}
+        disabled={disabled}
+        className="relative w-11 h-6 rounded-full transition-colors duration-200 disabled:opacity-50"
+        style={{
+          backgroundColor: enabled ? 'var(--color-primary)' : 'var(--color-surface)',
+        }}
+        aria-label={`Toggle ${label}`}
+      >
+        <div
+          className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200"
+          style={{
+            transform: enabled ? 'translateX(22px)' : 'translateX(2px)',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
 function SectionCard({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <div>
@@ -95,6 +157,68 @@ export default function SettingsPage() {
   const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
+    inactivity_nudges_enabled: true,
+    streak_notifications_enabled: true,
+  });
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const loadNotificationPrefs = useCallback(async () => {
+    if (!profile?.id || !profile?.gymId) return;
+    
+    const { data } = await supabase
+      .from('member_notification_preferences')
+      .select('inactivity_nudges_enabled, streak_notifications_enabled')
+      .eq('member_id', profile.id)
+      .single();
+    
+    if (data) {
+      setNotifPrefs({
+        inactivity_nudges_enabled: data.inactivity_nudges_enabled,
+        streak_notifications_enabled: data.streak_notifications_enabled,
+      });
+    }
+    setLoadingPrefs(false);
+  }, [profile?.id, profile?.gymId, supabase]);
+
+  useEffect(() => {
+    loadNotificationPrefs();
+  }, [loadNotificationPrefs]);
+
+  async function toggleNotifPref(key: keyof NotificationPreferences) {
+    if (!profile?.id || !profile?.gymId || savingPrefs) return;
+    
+    const newValue = !notifPrefs[key];
+    const oldPrefs = { ...notifPrefs };
+    
+    // Optimistic update
+    setNotifPrefs(prev => ({ ...prev, [key]: newValue }));
+    setSavingPrefs(true);
+    
+    // Upsert preference
+    const { error } = await supabase
+      .from('member_notification_preferences')
+      .upsert({
+        member_id: profile.id,
+        gym_id: profile.gymId,
+        [key]: newValue,
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: 'member_id',
+      });
+    
+    setSavingPrefs(false);
+    
+    if (error) {
+      // Revert on error
+      setNotifPrefs(oldPrefs);
+      toast.error('Failed to update preference');
+      return;
+    }
+    
+    toast.success(newValue ? 'Notifications enabled' : 'Notifications disabled');
+  }
 
   if (!profile) return <PageSkeleton rows={3} height={80} />;
 
@@ -151,6 +275,27 @@ export default function SettingsPage() {
           label="Edit Profile"
           sublabel="Name, contact number, QR code"
           onClick={() => router.push('/member/profile')}
+        />
+      </SectionCard>
+
+      {/* Notifications */}
+      <SectionCard title="Notifications">
+        <ToggleRow
+          icon={<BellOff size={17} />}
+          label="Workout Reminders"
+          sublabel="Get a gentle nudge when you've been away"
+          enabled={notifPrefs.inactivity_nudges_enabled}
+          onToggle={() => toggleNotifPref('inactivity_nudges_enabled')}
+          disabled={loadingPrefs || savingPrefs}
+        />
+        <Divider />
+        <ToggleRow
+          icon={<Flame size={17} />}
+          label="Streak Celebrations"
+          sublabel="Celebrate your consistency milestones"
+          enabled={notifPrefs.streak_notifications_enabled}
+          onToggle={() => toggleNotifPref('streak_notifications_enabled')}
+          disabled={loadingPrefs || savingPrefs}
         />
       </SectionCard>
 
