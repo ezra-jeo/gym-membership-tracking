@@ -1,33 +1,43 @@
+'use client';
+
 import { LandingNav } from '@/components/landing/landing-nav';
 import { LandingHero } from '@/components/landing/landing-hero';
 import { AboutSection } from '@/components/landing/about-section';
-import { FeatureTabViewer } from '@/components/landing/feature-tab-viewer';
+import { FeatureAccordion } from '@/components/landing/feature-accordion';
 import { CTAOverlay } from '@/components/landing/cta-overlay';
 import { ContactFooter } from '@/components/landing/contact-footer';
-import { ScrollReveal } from '@/components/landing/scroll-reveal';
+import { FullPageSwiper } from '@/components/landing/full-page-swiper';
 import { GymFinderSection } from '@/components/gym-finder-section';
+import '@/styles/swiper-custom.css';
 
 export default function LandingPage() {
   return (
     <div style={{ backgroundColor: 'var(--color-background)' }}>
       <LandingNav />
-      <LandingHero />
+      
+      <FullPageSwiper>
+        {/* Slide 1: Hero */}
+        <div className="hero-wrapper">
+          <LandingHero />
+        </div>
 
-      <ScrollReveal section="about">
+        {/* Slide 2: About */}
         <AboutSection />
-      </ScrollReveal>
 
-      <ScrollReveal delay={100} section="features">
-        <FeatureTabViewer />
-      </ScrollReveal>
+        {/* Slide 3: Features */}
+        <FeatureAccordion />
 
-      <ScrollReveal delay={100} section="cta">
+        {/* Slide 4: CTA */}
         <CTAOverlay />
-      </ScrollReveal>
 
-      <GymFinderSection />
-
-      <ContactFooter />
+        {/* Slide 5: Gym Finder + Footer */}
+        <div className="h-screen flex flex-col">
+          <div className="flex-1">
+            <GymFinderSection />
+          </div>
+          <ContactFooter />
+        </div>
+      </FullPageSwiper>
     </div>
   );
 }

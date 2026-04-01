@@ -2,10 +2,10 @@ export function AboutSection() {
   return (
     <section
       id="about"
-      className="py-28 lg:py-36 px-6 lg:px-12"
+      className="min-h-screen lg:h-screen flex items-center justify-center px-6 lg:px-12"
       style={{ backgroundColor: 'var(--color-surface)' }}
     >
-      <div className="max-w-2xl mx-auto text-center relative">
+      <div className="max-w-2xl mx-auto text-center relative py-20 lg:py-0">
         <span
           className="absolute -top-8 left-1/2 -translate-x-1/2 select-none pointer-events-none leading-none"
           style={{
