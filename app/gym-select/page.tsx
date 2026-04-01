@@ -219,7 +219,7 @@ export default function GymSelectPage() {
             <div className="flex-1 min-h-[60px] md:hidden" />
 
             {/* Action Section */}
-            <div className="md:space-y-3 pb-20 md:pb-0">
+            <div className="md:space-y-3 pb-15 md:pb-0">
               <div className="space-y-3">
                 {/* Remembered Gym Button */}
                 {rememberedGym && !searchMode && (
@@ -342,17 +342,17 @@ export default function GymSelectPage() {
                 )}
               </div>
 
-              {/* Divider - Desktop only */}
+              {/* Divider - visible on both mobile and desktop */}
               {!searchMode && (
                 <div 
-                  className="my-4 h-px hidden md:block"
+                  className="my-4 h-px"
                   style={{ backgroundColor: 'var(--color-surface)' }}
                 />
               )}
 
               {/* Footer Links */}
               {!searchMode && (
-                <div className="flex items-center justify-center gap-5 pt-3 md:pt-0">
+                <div className="flex items-center justify-center gap-5 pt-4 md:pt-0">
                   <button
                     type="button"
                     onClick={() => setQrModalOpen(true)}
