@@ -27,10 +27,11 @@ export async function middleware(request: NextRequest) {
 
   const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
   const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
+  const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
   const isAuthRoute = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/signup/")
 
   // Public pages should not pay auth/profile lookup cost.
-  if (isGymOrKioskRoute || isMarketingRoute) {
+  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute) {
     return supabaseResponse
   }
 
