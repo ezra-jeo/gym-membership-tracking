@@ -1,35 +1,51 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Mousewheel, Pagination, Keyboard } from 'swiper/modules';
 import type { Swiper as SwiperType } from 'swiper';
 
 import 'swiper/css';
 import 'swiper/css/pagination';
-import 'swiper/css/mousewheel';
 
 interface FullPageSwiperProps {
   children: React.ReactNode[];
   onSlideChange?: (index: number) => void;
 }
 
+// Global event for navbar to listen to
+const dispatchSlideChange = (index: number) => {
+  window.dispatchEvent(new CustomEvent('swiper-slide-change', { detail: { index } }));
+};
+
 export function FullPageSwiper({ children, onSlideChange }: FullPageSwiperProps) {
   const swiperRef = useRef<SwiperType | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean | null>(null); // null = loading
 
   useEffect(() => {
+    // Immediate check on mount
+    setIsMobile(window.innerWidth < 768);
+    
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleSlideChange = (swiper: SwiperType) => {
+  const handleSlideChange = useCallback((swiper: SwiperType) => {
     onSlideChange?.(swiper.activeIndex);
-  };
+    dispatchSlideChange(swiper.activeIndex);
+  }, [onSlideChange]);
+
+  // SSR/Loading: show children immediately without swiper wrapper
+  if (isMobile === null) {
+    return (
+      <div className="full-page-loading">
+        {children[0]}
+      </div>
+    );
+  }
 
   // Mobile: render normally without swiper
   if (isMobile) {
@@ -44,19 +60,21 @@ export function FullPageSwiper({ children, onSlideChange }: FullPageSwiperProps)
     );
   }
 
-  // Desktop: full-page swiper with snap
+  // Desktop: full-page swiper with snap - FASTER settings
   return (
     <Swiper
       onSwiper={(swiper) => {
         swiperRef.current = swiper;
+        // Dispatch initial slide
+        dispatchSlideChange(swiper.activeIndex);
       }}
       onSlideChange={handleSlideChange}
       direction="vertical"
       slidesPerView={1}
-      speed={800}
+      speed={500}
       mousewheel={{
-        sensitivity: 1,
-        thresholdDelta: 50,
+        sensitivity: 0.5,
+        thresholdDelta: 30,
         forceToAxis: true,
       }}
       keyboard={{

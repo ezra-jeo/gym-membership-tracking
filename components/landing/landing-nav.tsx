@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
@@ -18,14 +18,26 @@ export function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleScroll = useCallback(() => {
-    setScrolled(window.scrollY > 20);
-  }, []);
-
+  // Listen to both regular scroll (mobile) and swiper slide changes (desktop)
   useEffect(() => {
+    // Regular scroll for mobile
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+
+    // Swiper slide change for desktop
+    const handleSwiperChange = (e: CustomEvent<{ index: number }>) => {
+      setScrolled(e.detail.index > 0);
+    };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
+    window.addEventListener('swiper-slide-change', handleSwiperChange as EventListener);
+    
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('swiper-slide-change', handleSwiperChange as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? 'hidden' : '';

@@ -8,10 +8,17 @@
 
 .full-page-swiper .swiper-wrapper {
   height: 100%;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1) !important;
 }
 
 .full-page-slide {
   height: 100vh !important;
+  overflow: hidden;
+}
+
+/* Loading state - show hero immediately */
+.full-page-loading {
+  height: 100vh;
   overflow: hidden;
 }
 
@@ -33,7 +40,7 @@
   background: rgba(212, 149, 106, 0.3) !important;
   border-radius: 2px !important;
   opacity: 1 !important;
-  transition: all 0.3s ease !important;
+  transition: background 0.2s ease, height 0.2s ease !important;
   margin: 0 !important;
 }
 
