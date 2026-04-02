@@ -78,13 +78,23 @@ export default async function GymSignUpPage({ params }: PageProps) {
         style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94))' }}
       >
         <div className="w-full max-w-md">
-          <Link
-            href={`/gym/${encodeURIComponent(code)}`}
-            className="inline-flex items-center gap-1 text-xs mb-8"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            &larr; Back to {gym.name}
-          </Link>
+          <div className="mb-8 flex items-center justify-between gap-3">
+            <Link
+              href="/landing"
+              className="inline-flex items-center gap-1 text-xs"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              &larr; Back to Stren
+            </Link>
+
+            <Link
+              href={`/gym/${encodeURIComponent(code)}`}
+              className="inline-flex items-center gap-1 text-xs"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Back to {gym.name}
+            </Link>
+          </div>
 
           <div className="mb-8">
             <p

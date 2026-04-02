@@ -48,19 +48,33 @@ export function LandingHero() {
           Reducing pen-and-paper. Built for gym owners, and members.
         </p>
 
-        <Link
-          href="/gym-select"
-          onClick={() => track('hero_cta_click')}
-          className="group inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-300 hover:gap-4"
-          style={{
-            backgroundColor: 'var(--color-primary)',
-            color: '#FFFFFF',
-            boxShadow: '0 4px 24px rgba(212, 149, 106, 0.35)',
-          }}
-        >
-          <span>Your Gym</span>
-          <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-        </Link>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link
+            href="/gym-select"
+            onClick={() => track('hero_cta_click')}
+            className="group inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-300 hover:gap-4"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: '#FFFFFF',
+              boxShadow: '0 4px 24px rgba(212, 149, 106, 0.35)',
+            }}
+          >
+            <span>Your Gym</span>
+            <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+          </Link>
+
+          <Link
+            href="/signup/admin"
+            onClick={() => track('hero_register_gym_click')}
+            className="inline-flex items-center justify-center px-7 py-4 rounded-full font-semibold text-sm uppercase tracking-widest border transition-colors duration-300 hover:bg-white/10"
+            style={{
+              borderColor: 'rgba(255,255,255,0.55)',
+              color: '#FFFFFF',
+            }}
+          >
+            Register Gym
+          </Link>
+        </div>
       </div>
 
       {/* Mouse scroll indicator - like inboyu.com */}

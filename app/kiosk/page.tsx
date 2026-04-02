@@ -24,6 +24,7 @@ import {
 
 const SCANNER_ELEMENT_ID = "kiosk-qr-reader"
 const KIOSK_RPC_TIMEOUT_MS = 10000
+const SCANNER_START_TIMEOUT_MS = 8000
 
 type KioskMode = "qr" | "search"
 
@@ -49,6 +50,31 @@ type KioskCheckinResult = {
 
 type KioskCheckoutResult = {
   duration_min?: number
+}
+
+async function requestCameraPreflight(): Promise<void> {
+  if (typeof window === "undefined") return
+
+  if (!window.isSecureContext) {
+    throw new Error("Camera requires a secure context (HTTPS or localhost).")
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Camera API is unavailable in this browser.")
+  }
+
+  let stream: MediaStream | null = null
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    })
+  } catch {
+    // Fallback for devices that can't satisfy facingMode=environment.
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop())
+  }
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -93,10 +119,13 @@ export default function KioskPage() {
   const [checkedIn, setCheckedIn] = useState<CheckedInEntry[]>([])
   const [scanResult, setScanResult] = useState<(CheckInResult & { memberName: string }) | null>(null)
   const [scanStatus, setScanStatus] = useState<"initializing" | "scanning" | "processing" | "error">("initializing")
+  const [scanErrorMessage, setScanErrorMessage] = useState<string>("")
   const [isSearching, setIsSearching] = useState(false)
   const [actionPendingByMember, setActionPendingByMember] = useState<Record<string, "checkin" | "checkout">>({})
   const [isLoadingCheckedIn, setIsLoadingCheckedIn] = useState(false)
   const scannerRef = useRef<Html5QrcodeType | null>(null)
+  const isStartingScannerRef = useRef(false)
+  const isScannerActiveRef = useRef(false)
   const isProcessingRef = useRef(false)
   const isRefreshingCheckedInRef = useRef(false)
   const refreshQueuedRef = useRef(false)
@@ -145,49 +174,96 @@ export default function KioskPage() {
   }
 
   const startScanner = useCallback(async () => {
-    setScanStatus("initializing")
+    if (isStartingScannerRef.current || isScannerActiveRef.current) return
 
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop()
-      } catch { /* already stopped */ }
-      scannerRef.current = null
-    }
+    isStartingScannerRef.current = true
+    setScanStatus("initializing")
+    setScanErrorMessage("")
+
+    await stopScanner()
 
     try {
+      await requestCameraPreflight()
       const { Html5Qrcode } = await import("html5-qrcode")
       const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, { verbose: false })
       scannerRef.current = scanner
 
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
-        async (decodedText) => {
-          if (isProcessingRef.current) return
-          isProcessingRef.current = true
-          setScanStatus("processing")
+      await withTimeout(
+        scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1 },
+          async (decodedText) => {
+            if (isProcessingRef.current) return
+            isProcessingRef.current = true
+            setScanStatus("processing")
 
-          try {
-            await handleQrScan(decodedText)
-          } catch (err) {
-            toast.error("Check-in failed. Please try again.")
-            console.error("[Kiosk] scan error:", err)
-            setScanResult(null)
-          } finally {
-            setTimeout(() => {
-              isProcessingRef.current = false
-              setScanStatus("scanning")
-            }, 3000)
-          }
-        },
-        () => { /* ignore non-QR frames */ }
+            try {
+              await handleQrScan(decodedText)
+            } catch (err) {
+              toast.error("Check-in failed. Please try again.")
+              console.error("[Kiosk] scan error:", err)
+              setScanResult(null)
+            } finally {
+              setTimeout(() => {
+                isProcessingRef.current = false
+                setScanStatus("scanning")
+              }, 3000)
+            }
+          },
+          () => { /* ignore non-QR frames */ }
+        ),
+        SCANNER_START_TIMEOUT_MS,
+        "Camera initialization timed out.",
       )
 
+      isScannerActiveRef.current = true
       setScanStatus("scanning")
     } catch (err) {
       console.error("[Kiosk] Scanner failed to start:", err)
       setScanStatus("error")
-      toast.error("Could not access camera. Use manual search instead.")
+
+      if (scannerRef.current) {
+        try {
+          await scannerRef.current.stop()
+        } catch {
+          // Ignore stop failures when start did not complete.
+        }
+        try {
+          await scannerRef.current.clear()
+        } catch {
+          // Ignore clear failures when scanner did not render yet.
+        }
+        scannerRef.current = null
+      }
+      isScannerActiveRef.current = false
+
+      const name =
+        typeof err === "object" && err !== null && "name" in err
+          ? String((err as { name?: unknown }).name ?? "")
+          : ""
+
+      const message =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message?: unknown }).message ?? "")
+          : ""
+
+      const normalized = `${name} ${message}`.toLowerCase()
+      const blockedByPermission = normalized.includes("notallowederror") || normalized.includes("permission denied")
+      const insecureContext = typeof window !== "undefined" && !window.isSecureContext
+      const cameraBusy = normalized.includes("notreadableerror") || normalized.includes("could not start video source")
+
+      const nextMessage = blockedByPermission
+        ? "Camera access is blocked. Allow camera permission for this site, then retry."
+        : cameraBusy
+          ? "Camera is already in use by another tab or app. Close other camera users, then retry."
+        : insecureContext
+          ? "Camera requires a secure context (HTTPS or localhost)."
+          : "Could not access camera. Use manual search instead."
+
+      setScanErrorMessage(nextMessage)
+      toast.error(nextMessage)
+    } finally {
+      isStartingScannerRef.current = false
     }
   }, [])
 
@@ -196,8 +272,17 @@ export default function KioskPage() {
       try {
         await scannerRef.current.stop()
       } catch { /* already stopped */ }
+
+      try {
+        await scannerRef.current.clear()
+      } catch {
+        // Ignore clear errors when scanner was never fully started.
+      }
+
       scannerRef.current = null
     }
+
+    isScannerActiveRef.current = false
   }
 
   useEffect(() => {
@@ -205,12 +290,30 @@ export default function KioskPage() {
       const timer = setTimeout(() => startScanner(), 100)
       return () => {
         clearTimeout(timer)
-        stopScanner()
+        void stopScanner()
       }
     } else {
-      stopScanner()
+      void stopScanner()
     }
-    return () => { stopScanner() }
+    return () => { void stopScanner() }
+  }, [mode, startScanner])
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void stopScanner()
+        return
+      }
+
+      if (mode === "qr") {
+        void startScanner()
+      }
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
   }, [mode, startScanner])
 
   async function handleQrScan(qrCode: string) {
@@ -487,7 +590,7 @@ export default function KioskPage() {
             {scanStatus === "error" && (
               <>
                 <AlertCircle className="h-4 w-4" style={{ color: "#fc8181" }} />
-                <span style={{ color: "#fc8181" }}>Camera unavailable</span>
+                <span style={{ color: "#fc8181" }}>{scanErrorMessage || "Camera unavailable"}</span>
                 <Button onClick={startScanner} size="sm" variant="outline" className="ml-2">
                   Retry
                 </Button>

@@ -26,6 +26,7 @@ import { toast } from "sonner"
 
 export default function AdminDashboard() {
   const supabase = useMemo(() => createClient(), [])
+  const [isLoading, setIsLoading] = useState(true)
 
   const [checkedIn, setCheckedIn] = useState<
     { id: string; member_id: string; check_in: string; name: string }[]
@@ -42,20 +43,25 @@ export default function AdminDashboard() {
   const [revenueData, setRevenueData]     = useState<{ day: string; revenue: number }[]>([])
 
   const fetchData = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_dashboard_stats')
-    if (error || !data) return
+    setIsLoading(true)
+    try {
+      const { data, error } = await supabase.rpc('admin_dashboard_stats')
+      if (error || !data) return
 
-    setCheckedIn(data.currently_in)
-    setTodayVisits(data.today_visits)
-    setTotalMembers(data.total_members)
-    setPendingCount(data.pending_count)
-    setActiveCount(data.active_plans)
-    setExpiredCount(data.expired_plans)
-    setFrozenCount(data.frozen_plans)
-    setTodayRevenue(data.today_revenue)
-    setMonthRevenue(data.month_revenue)
-    setAttendanceData(data.attendance_7d)
-    setRevenueData(data.revenue_7d)
+      setCheckedIn(data.currently_in)
+      setTodayVisits(data.today_visits)
+      setTotalMembers(data.total_members)
+      setPendingCount(data.pending_count)
+      setActiveCount(data.active_plans)
+      setExpiredCount(data.expired_plans)
+      setFrozenCount(data.frozen_plans)
+      setTodayRevenue(data.today_revenue)
+      setMonthRevenue(data.month_revenue)
+      setAttendanceData(data.attendance_7d)
+      setRevenueData(data.revenue_7d)
+    } finally {
+      setIsLoading(false)
+    }
   }, [supabase])
 
   useEffect(() => {
@@ -126,7 +132,7 @@ export default function AdminDashboard() {
     { label: "Frozen plans", count: frozenCount, color: "#D97706" },
   ]
 
-  if (attendanceData.length === 0 && revenueData.length === 0 && checkedIn.length === 0 && totalMembers === 0) {
+  if (isLoading) {
     return <LoadingSkeleton rows={6} h={72} />
   }
 

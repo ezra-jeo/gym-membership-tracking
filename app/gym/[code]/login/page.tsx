@@ -36,6 +36,15 @@ export default async function GymLoginPage({ params }: PageProps) {
         />
 
         <div className="relative z-10">
+        <div className="mb-4 md:mb-2">
+          <Link
+            href={`/gym/${encodeURIComponent(code)}`}
+            className="inline-flex items-center gap-1 text-xs font-medium"
+            style={{ color: 'rgba(255,255,255,0.85)' }}
+          >
+            &larr; Back to gym page
+          </Link>
+        </div>
         <div className="flex justify-center pt-14 md:pt-0 mb-10 md:mb-8">
           <Link href={`/gym/${encodeURIComponent(code)}`}>
             <div
