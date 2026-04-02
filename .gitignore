@@ -16,3 +16,10 @@ creds.txt
 coverage/
 playwright-report/
 test-results/
+
+# Build cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Generated files
+repomix-output.xml

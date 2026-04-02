@@ -223,30 +223,36 @@ export type Database = {
         Row: {
           body: string | null
           created_at: string | null
+          for_member: boolean | null
           gym_id: string
           id: string
           is_read: boolean | null
           member_id: string | null
+          notification_type: Database["public"]["Enums"]["notification_type"] | null
           title: string
           type: string
         }
         Insert: {
           body?: string | null
           created_at?: string | null
+          for_member?: boolean | null
           gym_id: string
           id?: string
           is_read?: boolean | null
           member_id?: string | null
+          notification_type?: Database["public"]["Enums"]["notification_type"] | null
           title: string
           type: string
         }
         Update: {
           body?: string | null
           created_at?: string | null
+          for_member?: boolean | null
           gym_id?: string
           id?: string
           is_read?: boolean | null
           member_id?: string | null
+          notification_type?: Database["public"]["Enums"]["notification_type"] | null
           title?: string
           type?: string
         }
@@ -478,28 +484,37 @@ export type Database = {
       }
       streaks: {
         Row: {
+          avg_visit_interval_days: number | null
           best_streak: number | null
           current_streak: number | null
+          first_visit_date: string | null
           gym_id: string | null
           id: string
           last_visit_date: string | null
           member_id: string | null
+          total_visits: number | null
         }
         Insert: {
+          avg_visit_interval_days?: number | null
           best_streak?: number | null
           current_streak?: number | null
+          first_visit_date?: string | null
           gym_id?: string | null
           id?: string
           last_visit_date?: string | null
           member_id?: string | null
+          total_visits?: number | null
         }
         Update: {
+          avg_visit_interval_days?: number | null
           best_streak?: number | null
           current_streak?: number | null
+          first_visit_date?: string | null
           gym_id?: string | null
           id?: string
           last_visit_date?: string | null
           member_id?: string | null
+          total_visits?: number | null
         }
         Relationships: [
           {
@@ -514,6 +529,99 @@ export type Database = {
             columns: ["member_id"]
             isOneToOne: true
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      member_notification_preferences: {
+        Row: {
+          id: string
+          member_id: string
+          gym_id: string
+          inactivity_nudges_enabled: boolean
+          streak_notifications_enabled: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          member_id: string
+          gym_id: string
+          inactivity_nudges_enabled?: boolean
+          streak_notifications_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          member_id?: string
+          gym_id?: string
+          inactivity_nudges_enabled?: boolean
+          streak_notifications_enabled?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_notification_preferences_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "member_notification_preferences_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_cooldowns: {
+        Row: {
+          id: string
+          member_id: string
+          gym_id: string
+          notification_type: Database["public"]["Enums"]["notification_type"]
+          last_sent_at: string
+          inactivity_nudge_count: number
+          daily_count: number
+          daily_count_date: string
+        }
+        Insert: {
+          id?: string
+          member_id: string
+          gym_id: string
+          notification_type: Database["public"]["Enums"]["notification_type"]
+          last_sent_at?: string
+          inactivity_nudge_count?: number
+          daily_count?: number
+          daily_count_date?: string
+        }
+        Update: {
+          id?: string
+          member_id?: string
+          gym_id?: string
+          notification_type?: Database["public"]["Enums"]["notification_type"]
+          last_sent_at?: string
+          inactivity_nudge_count?: number
+          daily_count?: number
+          daily_count_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_cooldowns_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_cooldowns_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
             referencedColumns: ["id"]
           },
         ]
@@ -702,6 +810,33 @@ export type Database = {
       handle_new_user: { Args: Record<string, never>; Returns: unknown }
       handle_checkin_notification: { Args: Record<string, never>; Returns: unknown }
       handle_pending_member_notification: { Args: Record<string, never>; Returns: unknown }
+
+      // ── Notification system functions ──
+      calculate_avg_visit_interval: { Args: { p_member_id: string }; Returns: number | null }
+      can_send_member_notification: { 
+        Args: { p_member_id: string; p_notification_type: Database["public"]["Enums"]["notification_type"] }
+        Returns: boolean 
+      }
+      create_member_notification: {
+        Args: { 
+          p_member_id: string
+          p_gym_id: string
+          p_type: Database["public"]["Enums"]["notification_type"]
+          p_title: string
+          p_body: string
+        }
+        Returns: string | null
+      }
+      process_daily_notifications: {
+        Args: Record<string, never>
+        Returns: {
+          expiry_notifications: number
+          inactivity_notifications: number
+          processed_at: string
+        }
+      }
+      process_expiry_notifications: { Args: Record<string, never>; Returns: number }
+      process_inactivity_notifications: { Args: Record<string, never>; Returns: number }
     }
     Enums: {
       feed_item_type:
@@ -710,6 +845,12 @@ export type Database = {
         | "announcement"
         | "streak_milestone"
       membership_status: "active" | "expired" | "frozen"
+      notification_type:
+        | "membership_expiry_7d"
+        | "membership_expiry_0d"
+        | "streak_milestone"
+        | "inactivity_nudge"
+        | "announcement"
       payment_method: "cash" | "gcash"
       profile_status: "pending" | "active" | "rejected"
       promo_type: "student_pass" | "new_member" | "birthday" | "custom"

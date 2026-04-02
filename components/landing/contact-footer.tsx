@@ -19,9 +19,7 @@ export function ContactFooter() {
         <div className="grid md:grid-cols-3 gap-12 mb-12">
           <div>
             <Link href="/landing" className="inline-flex items-center gap-2 mb-4">
-              <div className="h-8 w-8 relative">
-                <Image src="/stren-logo.png" alt="Stren" fill className="object-contain" />
-              </div>
+              <Image src="/stren-logo.png" alt="Stren" width={32} height={32} className="object-contain" />
               <span
                 className="text-xl font-bold"
                 style={{
@@ -46,22 +44,22 @@ export function ContactFooter() {
             </h4>
             <div className="space-y-3">
               <a
-                href="mailto:hello@stren.ph"
+                href="mailto:bonakainu@gmail.com"
                 onClick={() => track('contact_click', { type: 'email' })}
                 className="flex items-center gap-3 text-sm transition-colors duration-200 hover:opacity-80"
                 style={{ color: 'var(--color-gray)' }}
               >
                 <Mail size={15} style={{ color: 'var(--color-primary)' }} />
-                hello@stren.ph
+                bonakainu@gmail.com
               </a>
               <a
-                href="tel:+639170000000"
+                href="tel:+639695637557"
                 onClick={() => track('contact_click', { type: 'phone' })}
                 className="flex items-center gap-3 text-sm transition-colors duration-200 hover:opacity-80"
                 style={{ color: 'var(--color-gray)' }}
               >
                 <Phone size={15} style={{ color: 'var(--color-primary)' }} />
-                +63 917 000 0000
+                +63 969 563 7557
               </a>
               <div className="flex items-center gap-3 text-sm" style={{ color: 'var(--color-gray)' }}>
                 <MapPin size={15} style={{ color: 'var(--color-primary)' }} />

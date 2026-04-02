@@ -1,0 +1,126 @@
+/* Full Page Swiper Custom Styles */
+
+/* Main swiper container */
+.full-page-swiper {
+  height: 100vh !important;
+  width: 100% !important;
+}
+
+.full-page-swiper .swiper-wrapper {
+  height: 100%;
+  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+}
+
+.full-page-slide {
+  height: 100vh !important;
+  overflow: hidden;
+}
+
+/* Loading state - show hero immediately */
+.full-page-loading {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Custom pagination bullets - vertical on right side */
+.full-page-swiper .swiper-pagination {
+  right: 2rem !important;
+  left: auto !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.75rem !important;
+  width: auto !important;
+}
+
+.custom-bullet {
+  width: 4px !important;
+  height: 40px !important;
+  background: rgba(212, 149, 106, 0.3) !important;
+  border-radius: 2px !important;
+  opacity: 1 !important;
+  transition: background 0.2s ease, height 0.2s ease !important;
+  margin: 0 !important;
+}
+
+.custom-bullet:hover {
+  background: rgba(212, 149, 106, 0.6) !important;
+}
+
+.custom-bullet-active {
+  background: var(--color-primary) !important;
+  height: 60px !important;
+}
+
+/* Mobile styles */
+.full-page-mobile {
+  width: 100%;
+}
+
+.full-page-mobile .mobile-section {
+  min-height: auto;
+}
+
+/* Hero section in swiper */
+.full-page-slide .hero-wrapper {
+  height: 100vh;
+  position: relative;
+}
+
+/* Feature accordion transitions */
+.feature-column-enter {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.feature-column-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: all 0.5s ease-out;
+}
+
+/* Prevent content overflow in slides */
+.full-page-slide > section {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Smooth entrance animations for slide content */
+.swiper-slide-active .slide-content {
+  animation: slideIn 0.6s ease-out forwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hide pagination on mobile */
+@media (max-width: 767px) {
+  .full-page-swiper .swiper-pagination {
+    display: none !important;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .custom-bullet,
+  .custom-bullet-active {
+    transition: none !important;
+  }
+  
+  .swiper-slide-active .slide-content {
+    animation: none;
+  }
+  
+  .full-page-swiper .swiper-wrapper {
+    transition-duration: 0ms !important;
+  }
+}
