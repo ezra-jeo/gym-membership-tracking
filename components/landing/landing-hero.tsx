@@ -49,7 +49,7 @@ export function LandingHero() {
         </p>
 
         <Link
-          href="/login"
+          href="/gym-select"
           onClick={() => track('hero_cta_click')}
           className="group inline-flex items-center gap-2 px-8 py-4 rounded-full font-semibold text-sm uppercase tracking-widest transition-all duration-300 hover:gap-4"
           style={{

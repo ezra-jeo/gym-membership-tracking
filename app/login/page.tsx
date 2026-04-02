@@ -19,11 +19,20 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
+      className="min-h-dvh md:min-h-screen flex flex-col md:items-center md:justify-center px-6 py-8 md:p-4 relative overflow-hidden"
       style={{ backgroundColor: 'var(--color-background)' }}
     >
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-12">
+      <div className="w-full max-w-md relative z-10 md:rounded-3xl md:p-10">
+        <div
+          className="absolute inset-0 hidden md:block rounded-3xl"
+          style={{
+            backgroundColor: 'var(--color-white)',
+            boxShadow: '0 4px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)',
+          }}
+        />
+
+        <div className="relative z-10">
+        <div className="flex justify-center pt-14 md:pt-0 mb-10 md:mb-8">
           <Link href="/landing">
             <div
               className="h-20 w-20 rounded-full overflow-hidden border-2 cursor-pointer hover:opacity-80 transition-opacity"
@@ -41,9 +50,9 @@ export default function LoginPage() {
         </div>
 
         <div
-          className="p-8 rounded-lg border shadow-md"
+          className="p-0 md:p-8 rounded-none md:rounded-2xl border-0 md:border shadow-none"
           style={{
-            backgroundColor: 'var(--color-white)',
+            backgroundColor: 'transparent',
             borderColor: 'var(--color-surface)',
             borderWidth: '1px',
           }}
@@ -70,6 +79,7 @@ export default function LoginPage() {
         <p className="text-center text-xs mt-6" style={{ color: 'var(--color-text-muted)' }}>
           Stren © 2026. All rights reserved.
         </p>
+        </div>
       </div>
     </div>
   );

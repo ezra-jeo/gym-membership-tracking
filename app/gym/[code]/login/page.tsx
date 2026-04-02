@@ -20,13 +20,23 @@ export default async function GymLoginPage({ params }: PageProps) {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-4"
+      className="min-h-dvh md:min-h-screen flex flex-col md:items-center md:justify-center px-6 py-8 md:p-4 relative overflow-hidden"
       style={{
         background: 'linear-gradient(145deg, var(--color-secondary) 0%, var(--color-primary-dark) 55%, var(--color-primary) 100%)',
       }}
     >
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-10">
+      <div className="w-full max-w-md relative z-10 md:rounded-3xl md:p-10">
+        <div
+          className="absolute inset-0 hidden md:block rounded-3xl"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.1)',
+            boxShadow: '0 4px 40px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.08)',
+            border: '1px solid rgba(255,255,255,0.18)',
+          }}
+        />
+
+        <div className="relative z-10">
+        <div className="flex justify-center pt-14 md:pt-0 mb-10 md:mb-8">
           <Link href={`/gym/${encodeURIComponent(code)}`}>
             <div
               className="h-20 w-20 rounded-full overflow-hidden border-2 cursor-pointer hover:opacity-80 transition-opacity"
@@ -42,7 +52,7 @@ export default async function GymLoginPage({ params }: PageProps) {
         </div>
 
         <div
-          className="p-8 rounded-2xl border shadow-2xl"
+          className="p-0 md:p-8 rounded-none md:rounded-2xl border-0 md:border shadow-none md:shadow-2xl"
           style={{
             backgroundColor: 'rgba(255,255,255,0.96)',
             borderColor: 'rgba(255,255,255,0.45)',
@@ -77,6 +87,7 @@ export default async function GymLoginPage({ params }: PageProps) {
         <p className="text-center text-xs mt-6" style={{ color: 'rgba(255,255,255,0.85)' }}>
           Stren © 2026. All rights reserved.
         </p>
+        </div>
       </div>
     </div>
   );
