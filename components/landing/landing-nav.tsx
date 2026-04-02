@@ -60,6 +60,7 @@ export function LandingNav() {
         style={{
           backgroundColor: scrolled ? 'rgba(255,255,255,0.97)' : 'transparent',
           backdropFilter: scrolled ? 'blur(12px)' : 'none',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
         }}
       >
         <div className="mx-auto max-w-[1400px] px-6 lg:px-10">
@@ -71,7 +72,7 @@ export function LandingNav() {
                 : '1px solid rgba(255,255,255,0.1)',
             }}
           >
-            {/* Left: Hamburger + Find a Location */}
+            {/* Left: Hamburger */}
             <div className="flex items-center gap-4">
               <button
                 type="button"
@@ -84,14 +85,6 @@ export function LandingNav() {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              
-              <Link
-                href="/gym-select"
-                className="hidden sm:block text-sm font-medium transition-colors duration-200 hover:opacity-70"
-                style={{ color: scrolled ? 'var(--color-text-secondary)' : 'rgba(255,255,255,0.8)' }}
-              >
-                Find a Location
-              </Link>
             </div>
 
             {/* Center: Logo */}
@@ -110,8 +103,20 @@ export function LandingNav() {
               </span>
             </Link>
 
-            {/* Right: empty for balance */}
-            <div className="w-24" />
+            {/* Right: Gym owner entry */}
+            <div className="hidden sm:block">
+              <Link
+                href="/signup/admin"
+                className="inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200 hover:scale-[1.02]"
+                style={{
+                  backgroundColor: scrolled ? 'var(--color-primary)' : 'rgba(255,255,255,0.16)',
+                  color: '#FFFFFF',
+                  border: scrolled ? 'none' : '1px solid rgba(255,255,255,0.28)',
+                }}
+              >
+                Register Gym
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
@@ -210,6 +215,17 @@ export function LandingNav() {
                   }}
                 >
                   Create Account
+                </Link>
+                <Link
+                  href="/signup/admin"
+                  onClick={closeMenu}
+                  className="block w-full text-center px-6 py-3.5 rounded-full font-semibold text-sm uppercase tracking-wider border-2 transition-all duration-200 hover:scale-[1.02]"
+                  style={{
+                    borderColor: 'var(--color-primary)',
+                    color: 'var(--color-primary)',
+                  }}
+                >
+                  Register Gym
                 </Link>
               </div>
             </div>

@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { href: '/member/settings', label: 'Settings', icon: Settings },
 ];
 
+const AUTH_LOADING_TIMEOUT_MS = 12000;
+
 interface MemberShellProps {
   children: React.ReactNode;
   gymBranding: GymBranding | null;
@@ -26,6 +28,7 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
   const pathname = usePathname();
   const router = useRouter();
   const { user, profile, isLoading } = useAuth();
+  const [authTimeoutExceeded, setAuthTimeoutExceeded] = React.useState(false);
   const gymCode = gymBranding?.code ?? null;
   const gymLoginHref = gymCode ? `/gym/${encodeURIComponent(gymCode)}/login` : '/login';
 
@@ -35,7 +38,27 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
     }
   }, [user, isLoading, hasServerUser, router, gymLoginHref]);
 
-  if (isLoading) return <LoadingScreen />;
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthTimeoutExceeded(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAuthTimeoutExceeded(true);
+    }, AUTH_LOADING_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!authTimeoutExceeded) return;
+    router.replace(gymLoginHref);
+  }, [authTimeoutExceeded, gymLoginHref, router]);
+
+  if (isLoading || authTimeoutExceeded) return <LoadingScreen />;
 
   const gymName = gymBranding?.name ?? 'Stren';
   const gymLogoUrl = gymBranding?.logo_url ?? null;

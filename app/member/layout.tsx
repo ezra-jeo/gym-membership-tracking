@@ -41,10 +41,11 @@ export default async function MemberLayout({
   }
 
   const brandColor = gymBranding?.brand_color ?? '#D4956A';
+  const secondaryColor = gymBranding?.secondary_color ?? null;
 
   return (
     <>
-      <style>{`:root { ${brandColorVars(brandColor)} }`}</style>
+      <style>{`:root { ${brandColorVars(brandColor, secondaryColor)} }`}</style>
       <MemberShell gymBranding={gymBranding} hasServerUser={!!user}>
         {children}
       </MemberShell>

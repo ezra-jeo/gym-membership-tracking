@@ -45,6 +45,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/kiosk',                 label: 'Kiosk',         icon: Monitor },
 ];
 
+const AUTH_LOADING_TIMEOUT_MS = 12000;
+
 export default function AdminLayout({
   children,
 }: {
@@ -52,22 +54,69 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, profile, isLoading, isSigningOut, signOut } = useAuth();
+  const { user, profile, isLoading, isSigningOut, signOut, refreshProfile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [gymName, setGymName] = useState<string | null>(null);
+  const [attemptedProfileRecovery, setAttemptedProfileRecovery] = useState(false);
+  const [isRecoveringProfile, setIsRecoveringProfile] = useState(false);
+  const [authTimeoutExceeded, setAuthTimeoutExceeded] = useState(false);
 
   useEffect(() => {
-    if (isLoading) return;
-    if (!user || !profile) {
+    if (isLoading || isRecoveringProfile) return;
+    if (!user) {
       router.replace('/login');
+      return;
+    }
+
+    if (!profile) {
+      if (attemptedProfileRecovery) {
+        router.replace('/login');
+      }
       return;
     }
 
     if (!['owner', 'admin', 'staff'].includes(profile.role)) {
       router.replace('/member');
     }
-  }, [user, profile, isLoading, router]);
+  }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, profile, router, user]);
+
+  useEffect(() => {
+    if (isLoading || !user || profile || attemptedProfileRecovery) return;
+
+    let active = true;
+    setAttemptedProfileRecovery(true);
+    setIsRecoveringProfile(true);
+
+    void refreshProfile().finally(() => {
+      if (!active) return;
+      setIsRecoveringProfile(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [attemptedProfileRecovery, isLoading, profile, refreshProfile, user]);
+
+  useEffect(() => {
+    if (!isLoading && !isRecoveringProfile) {
+      setAuthTimeoutExceeded(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAuthTimeoutExceeded(true);
+    }, AUTH_LOADING_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isLoading, isRecoveringProfile]);
+
+  useEffect(() => {
+    if (!authTimeoutExceeded) return;
+    router.replace('/login');
+  }, [authTimeoutExceeded, router]);
 
   // Fetch gym name once profile (and gymId) is available
   useEffect(() => {
@@ -91,15 +140,14 @@ export default function AdminLayout({
     [profile?.role]
   );
 
-  // Prefetch admin routes so tab switches feel instant in poor networks.
+  // Always collapse mobile menu after route changes.
   useEffect(() => {
-    if (!user || !profile) return;
-    visibleNavItems.forEach(({ href }) => {
-      router.prefetch(href);
-    });
-  }, [router, visibleNavItems, user, profile]);
+    setIsOpen(false);
+  }, [pathname]);
 
-  if (isLoading || !user || !profile) return <LoadingScreen />;
+  if (isLoading || isRecoveringProfile || authTimeoutExceeded) return <LoadingScreen />;
+
+  if (!user || !profile) return <LoadingScreen />;
 
   const handleLogout = async () => {
     if (isSigningOut) return;
@@ -152,29 +200,18 @@ export default function AdminLayout({
             const isActive =
               href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
             return (
-              <Link key={href} href={href}>
-                <div
-                  className="flex items-center gap-3 px-4 py-3 rounded-md transition-all cursor-pointer mb-1"
-                  style={{
-                    backgroundColor: isActive ? 'rgba(212, 149, 106, 0.12)' : 'transparent',
-                    color: isActive ? 'var(--color-primary-light)' : 'var(--color-gray)',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'rgba(212, 149, 106, 0.08)';
-                      e.currentTarget.style.color = 'var(--color-primary-light)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = 'var(--color-gray)';
-                    }
-                  }}
-                >
-                  <Icon size={20} />
-                  <span className="text-sm font-medium">{label}</span>
-                </div>
+              <Link
+                key={href}
+                href={href}
+                prefetch
+                className="flex items-center gap-3 px-4 py-3 rounded-md transition-colors cursor-pointer mb-1"
+                style={{
+                  backgroundColor: isActive ? 'rgba(212, 149, 106, 0.12)' : 'transparent',
+                  color: isActive ? 'var(--color-primary-light)' : 'var(--color-gray)',
+                }}
+              >
+                <Icon size={20} />
+                <span className="text-sm font-medium">{label}</span>
               </Link>
             );
           })}
@@ -247,16 +284,18 @@ export default function AdminLayout({
             }}
           >
             {visibleNavItems.map(({ label, href, icon: Icon }) => (
-              <Link key={href} href={href} onClick={() => setIsOpen(false)}>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-3"
-                  style={{ color: 'var(--color-gray)' }}
-                >
+              <Button
+                key={href}
+                variant="ghost"
+                className="w-full justify-start gap-3"
+                style={{ color: 'var(--color-gray)' }}
+                asChild
+              >
+                <Link href={href}>
                   <Icon size={20} />
                   {label}
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ))}
             <Button
               onClick={handleLogout}

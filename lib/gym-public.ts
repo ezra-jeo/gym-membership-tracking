@@ -26,7 +26,21 @@ const fetchGymByCode = unstable_cache(
     return data;
   },
   ['gym-public-by-code'],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: ['gym-public'] },
+);
+
+const fetchGymSecondaryColorByCode = unstable_cache(
+  async (code: string): Promise<string | null> => {
+    const { data: gymRow } = await publicSupabase
+      .from('gyms')
+      .select('secondary_color')
+      .eq('code', code)
+      .maybeSingle();
+
+    return gymRow?.secondary_color ?? null;
+  },
+  ['gym-public-secondary-by-code'],
+  { revalidate: 86400, tags: ['gym-public'] },
 );
 
 export async function getGymPublicByCode(rawCode: string) {
@@ -35,12 +49,7 @@ export async function getGymPublicByCode(rawCode: string) {
 
   let secondaryColor: string | null = null;
   try {
-    const { data: gymRow } = await publicSupabase
-      .from('gyms')
-      .select('secondary_color')
-      .eq('code', code)
-      .maybeSingle();
-    secondaryColor = gymRow?.secondary_color ?? null;
+    secondaryColor = await fetchGymSecondaryColorByCode(code);
   } catch {
     secondaryColor = null;
   }

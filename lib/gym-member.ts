@@ -15,13 +15,14 @@ export type GymBranding = {
   code: string;
   logo_url: string | null;
   brand_color: string;
+  secondary_color: string | null;
 };
 
 const fetchGymBrandingById = unstable_cache(
   async (gymId: string): Promise<GymBranding | null> => {
     const { data, error } = await publicSupabase
       .from('gyms')
-      .select('id, name, code, logo_url, logo_path, brand_color')
+      .select('id, name, code, logo_url, logo_path, brand_color, secondary_color')
       .eq('id', gymId)
       .maybeSingle();
 
@@ -39,10 +40,11 @@ const fetchGymBrandingById = unstable_cache(
       code: data.code,
       logo_url,
       brand_color: data.brand_color ?? '#D4956A',
+      secondary_color: data.secondary_color ?? null,
     };
   },
   ['gym-branding-by-id'],
-  { revalidate: 86400 },
+  { revalidate: 86400, tags: ['gym-branding'] },
 );
 
 export async function getGymBrandingById(gymId: string): Promise<GymBranding | null> {

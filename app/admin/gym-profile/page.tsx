@@ -841,10 +841,11 @@ export default function GymProfilePage() {
             <Link
               href={`/gym/${gymCode}`}
               target="_blank"
+              rel="noopener noreferrer"
               className="text-sm inline-flex items-center gap-1"
               style={{ color: 'var(--color-success)' }}
             >
-              View page <ExternalLink size={14} />
+              Preview as visitor <ExternalLink size={14} />
             </Link>
           </div>
         ) : (

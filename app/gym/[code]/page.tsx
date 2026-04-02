@@ -177,12 +177,6 @@ function GymLandingPage({ gym }: { gym: GymData }) {
               {gym.tagline}
             </p>
           )}
-          <span
-            className="mt-4 inline-flex rounded-full px-3 py-1 text-xs font-medium text-white/90"
-            style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}
-          >
-            {gym.member_count} active members
-          </span>
         </div>
 
         <div className="relative z-10 px-6 pb-12 space-y-3">
@@ -209,6 +203,15 @@ function GymLandingPage({ gym }: { gym: GymData }) {
               Log In
             </button>
           </Link>
+          <div className="pt-1 text-center">
+            <Link
+              href="/landing"
+              className="text-xs font-medium underline-offset-4 hover:underline"
+              style={{ color: 'rgba(255,255,255,0.72)' }}
+            >
+              Back to Stren
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -253,13 +256,6 @@ function GymLandingPage({ gym }: { gym: GymData }) {
                   {gym.tagline}
                 </p>
               )}
-
-              <span
-                className="mt-4 inline-flex rounded-full px-4 py-1.5 text-xs font-medium"
-                style={{ backgroundColor: 'rgba(0, 0, 0, 0.22)', color: 'var(--color-white)' }}
-              >
-                {gym.member_count} active members
-              </span>
 
               <div className="mt-8">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -529,6 +525,15 @@ function GymLandingPage({ gym }: { gym: GymData }) {
                 >
                   Login
                 </button>
+              </Link>
+            </div>
+            <div className="mt-5 text-center">
+              <Link
+                href="/landing"
+                className="text-sm font-medium underline-offset-4 hover:underline"
+                style={{ color: 'rgba(255,255,255,0.8)' }}
+              >
+                Back to Stren
               </Link>
             </div>
           </div>

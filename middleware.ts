@@ -1,14 +1,19 @@
 import { createServerClient } from "@supabase/ssr"
-import { NextResponse, type NextRequest } from "next/server"  
+import { NextResponse, type NextRequest } from "next/server"
 
-function addSecurityHeaders(response: NextResponse): NextResponse {
+function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
+  // In App Router client-side navigations, document-level policies may persist from
+  // the initial page load. Keep camera available to same-origin so /kiosk can start
+  // without requiring a hard refresh after navigating from /admin or /landing.
+  const cameraPolicy = 'camera=(self)'
+
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   response.headers.set(
     'Permissions-Policy',
-    'camera=(), microphone=(), geolocation=()',
+    `${cameraPolicy}, microphone=(), geolocation=()`,
   )
   return response
 }
@@ -77,7 +82,7 @@ export async function middleware(request: NextRequest) {
 
   // Public pages should not pay auth/profile lookup cost.
   if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute) {
-    return addSecurityHeaders(supabaseResponse)
+    return addSecurityHeaders(supabaseResponse, pathname)
   }
 
   if (isAuthRoute) {
@@ -88,12 +93,12 @@ export async function middleware(request: NextRequest) {
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
         clearSupabaseAuthCookies(request, supabaseResponse)
-        return addSecurityHeaders(supabaseResponse)
+        return addSecurityHeaders(supabaseResponse, pathname)
       }
       throw error
     }
 
-    if (!user) return addSecurityHeaders(supabaseResponse)
+    if (!user) return addSecurityHeaders(supabaseResponse, pathname)
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -102,11 +107,11 @@ export async function middleware(request: NextRequest) {
       .maybeSingle()
 
     if (!profile || profile.status === "pending" || profile.status === "rejected") {
-      return addSecurityHeaders(supabaseResponse)
+      return addSecurityHeaders(supabaseResponse, pathname)
     }
 
     const redirectTo = profile.role === "member" ? "/member" : "/admin"
-    return addSecurityHeaders(NextResponse.redirect(new URL(redirectTo, request.url)))
+    return addSecurityHeaders(NextResponse.redirect(new URL(redirectTo, request.url)), pathname)
   }
 
   let user = null
@@ -119,7 +124,7 @@ export async function middleware(request: NextRequest) {
       url.pathname = "/login"
       const redirect = NextResponse.redirect(url)
       clearSupabaseAuthCookies(request, redirect)
-      return addSecurityHeaders(redirect)
+      return addSecurityHeaders(redirect, pathname)
     }
     throw error
   }
@@ -128,7 +133,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
-    return addSecurityHeaders(NextResponse.redirect(url))
+    return addSecurityHeaders(NextResponse.redirect(url), pathname)
   }
 
   // Role-based access control
@@ -141,25 +146,25 @@ export async function middleware(request: NextRequest) {
 
   // No profile yet (trigger delay) or pending/rejected — send to login
   if (!profile || profile.status === "pending" || profile.status === "rejected") {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)))
+    return addSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), pathname)
   }
 
   // Admin routes — only admin/staff/owner
   if (pathname.startsWith("/admin")) {
     if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
-      return addSecurityHeaders(NextResponse.redirect(new URL("/member", request.url)))
+      return addSecurityHeaders(NextResponse.redirect(new URL("/member", request.url)), pathname)
     }
   }
 
   // Redirect stale /dashboard URLs to /admin
   if (pathname.startsWith("/dashboard")) {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/admin", request.url)))
+    return addSecurityHeaders(NextResponse.redirect(new URL("/admin", request.url)), pathname)
   }
 
   if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
   supabaseResponse.headers.set("x-user-role", profile.role)
 
-  return addSecurityHeaders(supabaseResponse)
+  return addSecurityHeaders(supabaseResponse, pathname)
 }
 
 export const config = {

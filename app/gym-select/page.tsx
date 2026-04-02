@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, QrCode, HelpCircle, Building2, X } from 'lucide-react';
+import { Search, QrCode, HelpCircle, Building2, X, ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 
 const STORAGE_KEY = 'stren-selected-gym';
@@ -172,6 +173,17 @@ export default function GymSelectPage() {
 
           {/* Content wrapper */}
           <div className="relative z-10 flex flex-col flex-1 md:flex-initial">
+            <div className="mb-4 md:mb-6">
+              <Link
+                href="/landing"
+                className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-black/5"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                <ArrowLeft size={14} />
+                Back to Stren
+              </Link>
+            </div>
+
             {/* Branding Section - positioned in upper area on mobile */}
             <div className="flex flex-col items-center justify-center text-center pt-20 pb-8 md:pt-0 md:pb-0 md:mb-10">
               {/* Logo with circular badge */}
@@ -355,6 +367,18 @@ export default function GymSelectPage() {
                   className="my-4 h-px"
                   style={{ backgroundColor: 'var(--color-surface)' }}
                 />
+              )}
+
+              {!searchMode && (
+                <div className="mb-4">
+                  <Link
+                    href="/login"
+                    className="block w-full rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors hover:bg-black/5"
+                    style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
+                  >
+                    Gym admin sign in
+                  </Link>
+                </div>
               )}
 
               {/* Footer Links */}

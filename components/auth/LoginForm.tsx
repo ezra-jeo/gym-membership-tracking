@@ -10,6 +10,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@/lib/validations';
 import type { z } from 'zod';
 
+const PROFILE_RETRY_ATTEMPTS = 3;
+const PROFILE_RETRY_DELAY_MS = 180;
+
 function getRoleHome(role: string): string {
   switch (role) {
     case 'owner':
@@ -61,15 +64,23 @@ export function LoginForm({ gymCode }: LoginFormProps) {
     return data?.id ?? null;
   };
 
-  const resolveGymCodeById = async (gymId: string): Promise<string | null> => {
-    const { data, error: gymError } = await supabase
-      .from('gyms')
-      .select('code')
-      .eq('id', gymId)
-      .maybeSingle();
+  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    if (gymError) return null;
-    return data?.code ?? null;
+  const getProfileWithRetry = async (userId: string) => {
+    for (let attempt = 0; attempt < PROFILE_RETRY_ATTEMPTS; attempt += 1) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('role, status, gym_id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (data) return data;
+      if (attempt < PROFILE_RETRY_ATTEMPTS - 1) {
+        await delay(PROFILE_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
+
+    return null;
   };
 
   const onSubmit = async (data: LoginFormData) => {
@@ -77,6 +88,19 @@ export function LoginForm({ gymCode }: LoginFormProps) {
     setIsLoading(true);
     try {
       const { email, password } = data;
+
+      // Keep gym login visible, but prevent active management sessions from switching accounts here.
+      if (gymCode) {
+        const { data: existingSession } = await supabase.auth.getUser();
+        if (existingSession.user && existingSession.user.email && existingSession.user.email !== email) {
+          const existingProfile = await getProfileWithRetry(existingSession.user.id);
+          if (existingProfile?.role && existingProfile.role !== 'member') {
+            setError('You are already signed in as a gym management account. Sign out first before signing in as a member.');
+            return;
+          }
+        }
+      }
+
       const { error: authError, user } = await signIn(email, password);
 
       if (authError) {
@@ -89,11 +113,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         return;
       }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, status, gym_id')
-        .eq('id', user.id)
-        .maybeSingle();
+      const profile = await getProfileWithRetry(user.id);
 
       if (profile?.status === 'pending') {
         setError('Your account is awaiting gym approval.');
@@ -107,19 +127,9 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         return;
       }
 
-      if (!gymCode && profile?.role === 'member') {
-        const memberGymCode = profile.gym_id
-          ? await resolveGymCodeById(profile.gym_id)
-          : null;
-
-        await supabase.auth.signOut({ scope: 'local' });
-
-        const fallbackHref = memberGymCode
-          ? `/gym/${encodeURIComponent(memberGymCode)}/login`
-          : '/login';
-
-        router.replace(fallbackHref);
-        router.refresh();
+      if (gymCode && profile?.role !== 'member') {
+        setError('Gym management accounts must sign in from the Stren login page.');
+        router.replace('/admin');
         return;
       }
 
@@ -144,8 +154,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         }
       }
 
-      router.push(getRoleHome(profile?.role ?? 'member'));
-      router.refresh();
+      router.push(getRoleHome(profile?.role ?? 'admin'));
     } catch {
       setError('Login failed unexpectedly. Please try again.');
     } finally {
@@ -170,19 +179,19 @@ export function LoginForm({ gymCode }: LoginFormProps) {
             type="email"
             placeholder="you@example.com"
             disabled={isLoading}
-            className="w-full px-4 py-3 rounded-lg border transition-all focus:outline-none"
+            className="w-full px-4 py-3 rounded-2xl border transition-all outline-none"
             style={{
               backgroundColor: 'var(--color-white)',
-              borderColor: 'var(--color-light-gray)',
+              borderColor: 'var(--color-surface)',
               borderWidth: '1.5px',
               color: 'var(--color-text-primary)',
             }}
             onFocus={(e) => {
               e.currentTarget.style.borderColor = 'var(--color-primary)';
-              e.currentTarget.style.boxShadow = '0 0 0 3px rgba(212, 149, 106, 0.15)';
+              e.currentTarget.style.boxShadow = '0 0 0 4px var(--color-primary-glow)';
             }}
             onBlur={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-light-gray)';
+              e.currentTarget.style.borderColor = 'var(--color-surface)';
               e.currentTarget.style.boxShadow = 'none';
             }}
           />
@@ -207,19 +216,19 @@ export function LoginForm({ gymCode }: LoginFormProps) {
             type="password"
             placeholder="••••••••"
             disabled={isLoading}
-            className="w-full px-4 py-3 rounded-lg border transition-all focus:outline-none"
+            className="w-full px-4 py-3 rounded-2xl border transition-all outline-none"
             style={{
               backgroundColor: 'var(--color-white)',
-              borderColor: 'var(--color-light-gray)',
+              borderColor: 'var(--color-surface)',
               borderWidth: '1.5px',
               color: 'var(--color-text-primary)',
             }}
             onFocus={(e) => {
               e.currentTarget.style.borderColor = 'var(--color-primary)';
-              e.currentTarget.style.boxShadow = '0 0 0 3px rgba(212, 149, 106, 0.15)';
+              e.currentTarget.style.boxShadow = '0 0 0 4px var(--color-primary-glow)';
             }}
             onBlur={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-light-gray)';
+              e.currentTarget.style.borderColor = 'var(--color-surface)';
               e.currentTarget.style.boxShadow = 'none';
             }}
           />
@@ -239,17 +248,17 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-3 rounded-lg font-semibold uppercase tracking-widest transition-all transform hover:scale-105 active:scale-100"
+          className="w-full py-3.5 rounded-2xl font-semibold uppercase tracking-widest transition-all"
           style={{
             background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
             color: 'var(--color-white)',
-            boxShadow: '0 4px 14px rgba(212, 149, 106, 0.4)',
+            boxShadow: '0 8px 20px var(--color-primary-glow)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 12px 36px rgba(212, 149, 106, 0.6)';
+            e.currentTarget.style.boxShadow = '0 10px 24px var(--color-primary-glow)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = '0 4px 14px rgba(212, 149, 106, 0.4)';
+            e.currentTarget.style.boxShadow = '0 8px 20px var(--color-primary-glow)';
           }}
         >
           {isLoading ? 'Signing in...' : 'Sign In'}

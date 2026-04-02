@@ -1,4 +1,4 @@
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
@@ -82,6 +82,8 @@ export async function POST(request: Request) {
   revalidatePath(`/gym/${encodedCode}/contact`);
   revalidatePath(`/gym/${encodedCode}/pricing`);
   revalidatePath(`/gym/${encodedCode}/locate`);
+  revalidateTag('gym-public', 'max');
+  revalidateTag('gym-branding', 'max');
 
   return NextResponse.json({ revalidated: true, code });
 }

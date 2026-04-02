@@ -9,6 +9,8 @@ import type { Profile } from "@/lib/types"
 
 const SIGN_OUT_TIMEOUT_MS = 10000
 const NAVIGATION_FAILSAFE_MS = 2000
+const PROFILE_FETCH_TIMEOUT_MS = 7000
+const PROFILE_HYDRATION_DEDUPE_MS = 2500
 const LOGIN_ORIGIN_STORAGE_KEY = "stren.auth.loginOriginPath"
 
 interface AuthContextValue {
@@ -90,12 +92,31 @@ function isInvalidRefreshTokenError(error: unknown): boolean {
   )
 }
 
+function isBenignLockAbortError(error: unknown): boolean {
+  if (!error) return false
+
+  const message = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : ""
+
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes("lock broken by another request") &&
+    normalized.includes("steal")
+  )
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const isRecoveringAuthRef = useRef(false)
+  const recentProfileHydrationRef = useRef<{ userId: string; at: number } | null>(null)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -107,7 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return (
       pathname.startsWith("/landing") ||
       pathname.startsWith("/gym") ||
-      pathname.startsWith("/kiosk") ||
       pathname.startsWith("/login") ||
       pathname.startsWith("/signup")
     )
@@ -176,6 +196,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const currentUser = session?.user ?? null
       setUser(currentUser)
       if (currentUser) {
+        const recentHydration = recentProfileHydrationRef.current
+        const now = Date.now()
+        if (
+          recentHydration &&
+          recentHydration.userId === currentUser.id &&
+          now - recentHydration.at < PROFILE_HYDRATION_DEDUPE_MS
+        ) {
+          setIsLoading(false)
+          return
+        }
+
         await fetchProfile(currentUser.id, supabase)
       } else {
         setProfile(null)
@@ -232,6 +263,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (shouldSkipAuthBootstrap || !supabase) return
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      if (isBenignLockAbortError(event.reason)) {
+        // Supabase may steal a lock across tabs during auth refresh; this abort is expected.
+        event.preventDefault()
+        return
+      }
+
       if (!isInvalidRefreshTokenError(event.reason)) return
 
       event.preventDefault()
@@ -244,11 +281,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function fetchProfile(userId: string, client = getClient()) {
     try {
-      const { data, error } = await client
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle()
+      const { data, error } = await withTimeout(
+        client
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle(),
+        PROFILE_FETCH_TIMEOUT_MS,
+        "Profile lookup timed out.",
+      )
 
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
@@ -261,6 +302,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data) {
+        recentProfileHydrationRef.current = { userId, at: Date.now() }
         setProfile({
           id: data.id,
           email: data.email,
@@ -286,6 +328,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signIn(email: string, password: string) {
     const client = getClient()
     const { data, error } = await client.auth.signInWithPassword({ email, password })
+
+    if (data.user) {
+      setIsLoading(true)
+      await fetchProfile(data.user.id, client)
+    }
+
     return { error: error?.message ?? null, user: data.user ?? null }
   }
 
