@@ -97,7 +97,14 @@ export default function GymSelectPage() {
   const handleGymSelect = (gym: GymSearchResult | SavedGym) => {
     const toSave: SavedGym = { id: gym.id, name: gym.name, code: gym.code };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-    router.push(`/login?gym=${encodeURIComponent(gym.code)}`);
+    setRememberedGym(toSave);
+    setSearchMode(false);
+    setQuery('');
+    setResults([]);
+  };
+
+  const handleContinueToGym = (gym: SavedGym) => {
+    router.push(`/gym/${encodeURIComponent(gym.code)}`);
   };
 
   const handleEnterSearchMode = () => setSearchMode(true);
@@ -225,7 +232,7 @@ export default function GymSelectPage() {
                 {rememberedGym && !searchMode && (
                   <button
                     type="button"
-                    onClick={() => handleGymSelect(rememberedGym)}
+                    onClick={() => handleContinueToGym(rememberedGym)}
                     className="w-full flex items-center justify-center gap-3 px-5 py-4 rounded-2xl font-semibold text-[15px] transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
                     style={{
                       background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',

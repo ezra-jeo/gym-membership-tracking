@@ -33,13 +33,20 @@ export function hexDarken(hex: string, ratio = 0.15): string {
  *
  * Usage: <style>{`:root { ${brandColorVars(gym.brand_color)} }`}</style>
  */
-export function brandColorVars(hex: string): string {
+export function brandColorVars(hex: string, secondaryHex?: string | null): string {
   const safeHex = isValidHex(hex) ? hex.toUpperCase() : '#D4956A';
   const dark = hexDarken(safeHex);
+  const safeSecondary = isValidHex(secondaryHex ?? '')
+    ? (secondaryHex as string).toUpperCase()
+    : hexDarken(safeHex, 0.35);
+  const secondaryDark = hexDarken(safeSecondary);
 
   return [
     `--color-primary: ${safeHex};`,
     `--color-primary-dark: ${dark};`,
     `--color-primary-glow: ${safeHex}26;`,
+    `--color-secondary: ${safeSecondary};`,
+    `--color-secondary-dark: ${secondaryDark};`,
+    `--color-secondary-glow: ${safeSecondary}29;`,
   ].join('\n');
 }

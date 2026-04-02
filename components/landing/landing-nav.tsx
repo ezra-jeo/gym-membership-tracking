@@ -85,14 +85,13 @@ export function LandingNav() {
                 <Menu className="h-5 w-5" />
               </button>
               
-              <button
-                type="button"
-                onClick={() => setMenuOpen(true)}
+              <Link
+                href="/gym-select"
                 className="hidden sm:block text-sm font-medium transition-colors duration-200 hover:opacity-70"
                 style={{ color: scrolled ? 'var(--color-text-secondary)' : 'rgba(255,255,255,0.8)' }}
               >
                 Find a Location
-              </button>
+              </Link>
             </div>
 
             {/* Center: Logo */}
@@ -191,7 +190,7 @@ export function LandingNav() {
 
               <div className="px-6 space-y-3">
                 <Link
-                  href="/login"
+                  href="/gym-select"
                   onClick={closeMenu}
                   className="block w-full text-center px-6 py-3.5 rounded-full font-semibold text-sm uppercase tracking-wider transition-all duration-200 hover:scale-[1.02]"
                   style={{

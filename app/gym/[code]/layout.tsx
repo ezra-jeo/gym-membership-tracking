@@ -14,6 +14,7 @@ type GymLayoutData = {
   name: string;
   code: string;
   brand_color: string | null;
+  secondary_color?: string | null;
   is_published: boolean;
 };
 
@@ -34,7 +35,7 @@ export default async function GymLayout({ children, params }: LayoutProps) {
 
   return (
     <>
-      <style>{`:root { ${brandColorVars(gymData.brand_color ?? '#D4956A')} }`}</style>
+      <style>{`:root { ${brandColorVars(gymData.brand_color ?? '#D4956A', gymData.secondary_color ?? null)} }`}</style>
 
       {isPublished && (
         <nav
@@ -61,10 +62,10 @@ export default async function GymLayout({ children, params }: LayoutProps) {
               ))}
             </div>
 
-            <Link href={`/signup/member?gym=${encodeURIComponent(gymData.code)}`}>
+            <Link href={`/gym/${encodeURIComponent(gymData.code)}/signup`}>
               <button
                 className="rounded-full px-4 py-1.5 text-xs font-semibold sm:px-5 sm:py-2 md:text-sm"
-                style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+                style={{ backgroundColor: 'var(--color-secondary)', color: 'var(--color-white)' }}
               >
                 Join
               </button>

@@ -20,6 +20,7 @@ type GymData = {
   cover_path: string | null;
   cover_url: string | null;
   brand_color: string;
+  secondary_color?: string | null;
   operating_hours: Record<string, string> | null;
   amenities: string[] | null;
   social_links: { facebook?: string; instagram?: string; website?: string } | null;
@@ -59,6 +60,7 @@ export default async function GymPage({ params }: PageProps) {
     cover_path: resolvedCoverPath,
     logo_url: resolvedLogoUrl,
     cover_url: resolvedCoverUrl,
+    secondary_color: (data as { secondary_color?: string | null }).secondary_color ?? null,
     operating_hours: toOperatingHours(data.operating_hours),
     social_links: toSocialLinks(data.social_links),
   };
@@ -74,7 +76,7 @@ function ComingSoonPage({ gym }: { gym: GymData }) {
   return (
     <div
       className="relative min-h-screen overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))' }}
+      style={{ background: 'linear-gradient(135deg, var(--color-secondary), var(--color-primary-dark), var(--color-primary))' }}
     >
       <div className="flex min-h-screen items-center justify-center px-5 sm:px-6">
         <div className="max-w-3xl text-center">
@@ -87,10 +89,10 @@ function ComingSoonPage({ gym }: { gym: GymData }) {
           <p className="mt-4 text-xl sm:text-2xl" style={{ color: 'var(--color-white)', opacity: 0.8 }}>
             Coming soon.
           </p>
-          <Link href={`/signup/member?gym=${encodeURIComponent(gym.code)}`} className="mt-10 inline-block">
+          <Link href={`/gym/${encodeURIComponent(gym.code)}/signup`} className="mt-10 inline-block">
             <button
               className="w-full max-w-[90vw] rounded-full px-8 py-4 text-base font-semibold sm:w-auto sm:max-w-none sm:px-10"
-              style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-primary)' }}
+              style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
             >
               Join {gym.name}
             </button>
@@ -109,6 +111,108 @@ function GymLandingPage({ gym }: { gym: GymData }) {
 
   return (
     <>
+      <div className="relative flex flex-col min-h-screen md:hidden overflow-hidden">
+        {gym.cover_url ? (
+          <>
+            <Image
+              src={gym.cover_url}
+              alt={gym.name}
+              fill
+              className="object-cover"
+              sizes="100vw"
+              priority
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.75) 75%, rgba(0,0,0,0.92) 100%)',
+              }}
+            />
+          </>
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(145deg, var(--color-secondary), var(--color-primary-dark), var(--color-primary))' }}
+          />
+        )}
+
+        <div className="relative z-10 flex justify-center pt-14">
+          {gym.logo_url ? (
+            <div className="h-16 w-16 overflow-hidden rounded-2xl border-2 border-white/70 shadow-lg">
+              <Image
+                src={gym.logo_url}
+                alt={`${gym.name} logo`}
+                width={64}
+                height={64}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div
+              className="h-16 w-16 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              <span className="text-white text-2xl font-bold" style={{ fontFamily: 'var(--font-heading)' }}>
+                {gym.name.charAt(0)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center">
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/85"
+            style={{ fontFamily: 'var(--font-heading)' }}
+          >
+            Personal Training
+          </p>
+          <h1
+            className="mt-2 text-4xl font-bold text-white leading-tight"
+            style={{ fontFamily: 'var(--font-heading)' }}
+          >
+            {gym.name}
+          </h1>
+          {gym.tagline && (
+            <p className="mt-3 text-base text-white/80 max-w-xs leading-relaxed">
+              {gym.tagline}
+            </p>
+          )}
+          <span
+            className="mt-4 inline-flex rounded-full px-3 py-1 text-xs font-medium text-white/90"
+            style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}
+          >
+            {gym.member_count} active members
+          </span>
+        </div>
+
+        <div className="relative z-10 px-6 pb-12 space-y-3">
+          <Link href={`/gym/${encodeURIComponent(gym.code)}/signup`} className="block">
+            <button
+              className="w-full py-4 rounded-xl text-base font-semibold uppercase tracking-[0.14em]"
+              style={{
+                backgroundColor: 'var(--color-primary)',
+                color: 'var(--color-white)',
+              }}
+            >
+              Create Account
+            </button>
+          </Link>
+          <Link href={`/gym/${encodeURIComponent(gym.code)}/login`} className="block">
+            <button
+              className="w-full py-4 rounded-xl border text-base font-semibold uppercase tracking-[0.14em]"
+              style={{
+                backgroundColor: 'rgba(0,0,0,0.28)',
+                color: 'var(--color-white)',
+                borderColor: 'rgba(255,255,255,0.3)',
+              }}
+            >
+              Log In
+            </button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="hidden md:block">
       <header className="relative min-h-[90vh] overflow-hidden md:min-h-screen">
         {gym.cover_url ? (
           <>
@@ -152,20 +256,30 @@ function GymLandingPage({ gym }: { gym: GymData }) {
 
               <span
                 className="mt-4 inline-flex rounded-full px-4 py-1.5 text-xs font-medium"
-                style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', color: 'var(--color-white)' }}
+                style={{ backgroundColor: 'rgba(0, 0, 0, 0.22)', color: 'var(--color-white)' }}
               >
                 {gym.member_count} active members
               </span>
 
               <div className="mt-8">
-                <Link href={`/signup/member?gym=${encodeURIComponent(gym.code)}`}>
-                  <button
-                    className="w-full max-w-[90vw] truncate rounded-full px-8 py-4 text-base font-semibold sm:w-auto sm:max-w-none sm:px-10"
-                    style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
-                  >
-                    Join {gym.name}
-                  </button>
-                </Link>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <Link href={`/gym/${encodeURIComponent(gym.code)}/signup`}>
+                    <button
+                      className="w-full max-w-[90vw] truncate rounded-xl px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
+                      style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+                    >
+                      Join {gym.name}
+                    </button>
+                  </Link>
+                  <Link href={`/gym/${encodeURIComponent(gym.code)}/login`}>
+                    <button
+                      className="w-full max-w-[90vw] truncate rounded-xl border px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
+                      style={{ borderColor: 'rgba(255,255,255,0.45)', color: 'var(--color-white)', backgroundColor: 'rgba(0,0,0,0.22)' }}
+                    >
+                      Login
+                    </button>
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
@@ -351,7 +465,7 @@ function GymLandingPage({ gym }: { gym: GymData }) {
                   href={gym.social_links.facebook}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-[var(--color-surface)] bg-[var(--color-white)] px-6 py-3 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:w-auto sm:px-8"
+                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-(--color-surface) bg-white px-6 py-3 text-sm font-medium text-(--color-text-primary) transition-colors hover:border-(--color-primary) hover:text-(--color-primary) sm:w-auto sm:px-8"
                   style={{ borderWidth: '1.5px' }}
                 >
                   <Facebook size={18} /> Facebook
@@ -363,7 +477,7 @@ function GymLandingPage({ gym }: { gym: GymData }) {
                   href={gym.social_links.instagram}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-[var(--color-surface)] bg-[var(--color-white)] px-6 py-3 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:w-auto sm:px-8"
+                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-(--color-surface) bg-white px-6 py-3 text-sm font-medium text-(--color-text-primary) transition-colors hover:border-(--color-primary) hover:text-(--color-primary) sm:w-auto sm:px-8"
                   style={{ borderWidth: '1.5px' }}
                 >
                   <Instagram size={18} /> Instagram
@@ -375,7 +489,7 @@ function GymLandingPage({ gym }: { gym: GymData }) {
                   href={gym.social_links.website}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-[var(--color-surface)] bg-[var(--color-white)] px-6 py-3 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:w-auto sm:px-8"
+                  className="inline-flex w-full items-center justify-center gap-3 rounded-full border border-(--color-surface) bg-white px-6 py-3 text-sm font-medium text-(--color-text-primary) transition-colors hover:border-(--color-primary) hover:text-(--color-primary) sm:w-auto sm:px-8"
                   style={{ borderWidth: '1.5px' }}
                 >
                   <Globe size={18} /> Website
@@ -386,7 +500,7 @@ function GymLandingPage({ gym }: { gym: GymData }) {
         </section>
       )}
 
-      <section style={{ backgroundColor: 'var(--color-primary)' }}>
+      <section style={{ background: 'linear-gradient(130deg, var(--color-secondary), var(--color-primary))' }}>
         <div className="mx-auto max-w-5xl px-6 py-20 text-center md:px-16 md:py-28">
           <h2
             className="text-3xl font-bold sm:text-4xl md:text-5xl"
@@ -399,17 +513,28 @@ function GymLandingPage({ gym }: { gym: GymData }) {
           </p>
 
           <div className="mt-10">
-            <Link href={`/signup/member?gym=${encodeURIComponent(gym.code)}`}>
-              <button
-                className="w-full max-w-[90vw] truncate rounded-full px-8 py-4 text-base font-semibold sm:w-auto sm:max-w-none sm:px-10"
-                style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-primary)' }}
-              >
-                Join {gym.name}
-              </button>
-            </Link>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+              <Link href={`/gym/${encodeURIComponent(gym.code)}/signup`}>
+                <button
+                  className="w-full max-w-[90vw] truncate rounded-xl px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
+                  style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+                >
+                  Join {gym.name}
+                </button>
+              </Link>
+              <Link href={`/gym/${encodeURIComponent(gym.code)}/login`}>
+                <button
+                  className="w-full max-w-[90vw] truncate rounded-xl border px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
+                  style={{ borderColor: 'rgba(255,255,255,0.7)', color: 'var(--color-white)', backgroundColor: 'rgba(0,0,0,0.18)' }}
+                >
+                  Login
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>
+      </div>
     </>
   );
 }

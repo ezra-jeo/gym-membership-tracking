@@ -152,6 +152,7 @@ export type Database = {
           address: string | null
           amenities: string[] | null
           brand_color: string | null
+          secondary_color: string | null
           code: string
           cover_path: string | null
           cover_url: string | null
@@ -174,6 +175,7 @@ export type Database = {
           address?: string | null
           amenities?: string[] | null
           brand_color?: string | null
+          secondary_color?: string | null
           code: string
           cover_path?: string | null
           cover_url?: string | null
@@ -196,6 +198,7 @@ export type Database = {
           address?: string | null
           amenities?: string[] | null
           brand_color?: string | null
+          secondary_color?: string | null
           code?: string
           cover_path?: string | null
           cover_url?: string | null
@@ -781,6 +784,7 @@ export type Database = {
           logo_url: string | null
           cover_url: string | null
           brand_color: string
+          secondary_color: string | null
           operating_hours: Json | null
           amenities: string[] | null
           social_links: Json | null

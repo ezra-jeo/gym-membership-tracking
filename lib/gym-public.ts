@@ -32,7 +32,30 @@ const fetchGymByCode = unstable_cache(
 export async function getGymPublicByCode(rawCode: string) {
   const code = normalizeGymCode(rawCode);
   const data = await fetchGymByCode(code);
-  return { code, data };
+
+  let secondaryColor: string | null = null;
+  try {
+    const { data: gymRow } = await publicSupabase
+      .from('gyms')
+      .select('secondary_color')
+      .eq('code', code)
+      .maybeSingle();
+    secondaryColor = gymRow?.secondary_color ?? null;
+  } catch {
+    secondaryColor = null;
+  }
+
+  if (!data) {
+    return { code, data };
+  }
+
+  return {
+    code,
+    data: {
+      ...data,
+      secondary_color: (data as { secondary_color?: string | null }).secondary_color ?? secondaryColor,
+    },
+  };
 }
 
 export function getGymAssetPublicUrl(path: string | null | undefined): string | null {

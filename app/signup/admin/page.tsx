@@ -5,69 +5,91 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { CheckCircle2, ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
+import { generateGymCode } from '@/lib/crypto';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { adminSignUpSchema } from '@/lib/validations';
+import type { z } from 'zod';
 
-function generateCode(name: string) {
-  const prefix = name.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase();
-  const suffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `${prefix}-${suffix}`;
-}
+type AdminSignUpFormData = z.infer<typeof adminSignUpSchema>;
 
 export default function AdminSignUpPage() {
   const supabase = useMemo(() => createClient(), []);
 
-  const [gymName, setGymName] = useState('');
-  const [gymAddress, setGymAddress] = useState('');
-  const [gymPhone, setGymPhone] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [gymCode, setGymCode] = useState('');
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    if (!gymName || !name || !email || !password) { setError('Please fill in all required fields'); return }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return }
-    setIsLoading(true)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<AdminSignUpFormData>({
+    resolver: zodResolver(adminSignUpSchema),
+    defaultValues: {
+      gymName: '',
+      gymAddress: '',
+      gymPhone: '',
+      name: '',
+      email: '',
+      password: '',
+    },
+  });
 
-    // 1. Create auth user
+  const onSubmit = async (data: AdminSignUpFormData) => {
+    setError('');
+    setIsLoading(true);
+
+    const { gymName, gymAddress, gymPhone, name, email, password } = data;
+
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name, role: 'owner' } },
-    })
-    if (authError) { setError(authError.message); setIsLoading(false); return }
-    if (!authData.user) { setError('Sign-up failed'); setIsLoading(false); return }
+    });
+    if (authError) {
+      setError(authError.message);
+      setIsLoading(false);
+      return;
+    }
+    if (!authData.user) {
+      setError('Sign-up failed');
+      setIsLoading(false);
+      return;
+    }
 
-    // 2. Sign in to get an authenticated session
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInError) { setError('Account created but could not sign in: ' + signInError.message); setIsLoading(false); return }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) {
+      setError(`Account created but could not sign in: ${signInError.message}`);
+      setIsLoading(false);
+      return;
+    }
 
-    // 3. Create gym + owner profile atomically via SECURITY DEFINER RPC
-    //    This bypasses RLS — no direct gyms INSERT or profiles UPDATE needed
-    const code = generateCode(gymName)
+    const code = generateGymCode(gymName);
     const { data: rpcData, error: rpcError } = await supabase.rpc('create_gym_and_owner', {
-      p_user_id:     authData.user.id,
-      p_email:       email,
-      p_name:        name,
-      p_gym_name:    gymName,
-      p_gym_code:    code,
+      p_user_id: authData.user.id,
+      p_email: email,
+      p_name: name,
+      p_gym_name: gymName,
+      p_gym_code: code,
       p_gym_address: gymAddress || undefined,
-      p_gym_phone:   gymPhone || undefined,
-    })
+      p_gym_phone: gymPhone || undefined,
+    });
 
-    if (rpcError) { setError(rpcError.message); setIsLoading(false); return }
+    if (rpcError) {
+      setError(rpcError.message);
+      setIsLoading(false);
+      return;
+    }
 
-    // 4. Sign out — let the user log in fresh
-    await supabase.auth.signOut()
+    await supabase.auth.signOut();
 
-    setGymCode((rpcData as { gym_code: string }).gym_code)
-    setIsLoading(false)
-    setDone(true)
-  }
+    setGymCode((rpcData as { gym_code: string }).gym_code);
+    setIsLoading(false);
+    setDone(true);
+  };
+
   const inputStyle = {
     backgroundColor: 'var(--color-white)',
     borderColor: 'var(--color-light-gray)',
@@ -119,21 +141,24 @@ export default function AdminSignUpPage() {
                 Set up your gym and owner account
               </p>
 
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: 'var(--color-primary)' }}>Gym Details</p>
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Gym Name *</label>
-                      <input type="text" placeholder="Iron Paradise" value={gymName} onChange={(e) => setGymName(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      <input {...register('gymName')} type="text" placeholder="Iron Paradise" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.gymName && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.gymName.message}</p>}
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Address</label>
-                      <input type="text" placeholder="123 Main St" value={gymAddress} onChange={(e) => setGymAddress(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      <input {...register('gymAddress')} type="text" placeholder="123 Main St" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.gymAddress && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.gymAddress.message}</p>}
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Phone</label>
-                      <input type="text" placeholder="09XX XXX XXXX" value={gymPhone} onChange={(e) => setGymPhone(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      <input {...register('gymPhone')} type="text" placeholder="09XX XXX XXXX" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.gymPhone && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.gymPhone.message}</p>}
                     </div>
                   </div>
                 </div>
@@ -143,16 +168,18 @@ export default function AdminSignUpPage() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Your Name *</label>
-                      <input type="text" placeholder="Juan Dela Cruz" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      <input {...register('name')} type="text" placeholder="Juan Dela Cruz" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.name && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.name.message}</p>}
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Email *</label>
-                      <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      <input {...register('email')} type="email" placeholder="you@example.com" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.email && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.email.message}</p>}
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Password *</label>
-                      <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
-                      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Must be at least 6 characters</p>
+                      <input {...register('password')} type="password" placeholder="••••••••" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                      {errors.password && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.password.message}</p>}
                     </div>
                   </div>
                 </div>
