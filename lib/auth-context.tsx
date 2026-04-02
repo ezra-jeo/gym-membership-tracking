@@ -9,6 +9,7 @@ import type { Profile } from "@/lib/types"
 
 const SIGN_OUT_TIMEOUT_MS = 10000
 const NAVIGATION_FAILSAFE_MS = 2000
+const LOGIN_ORIGIN_STORAGE_KEY = "stren.auth.loginOriginPath"
 
 interface AuthContextValue {
   user: User | null
@@ -22,6 +23,53 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
+  user: null,
+  profile: null,
+  isLoading: false,
+  isSigningOut: false,
+  signIn: async () => ({ error: "Authentication unavailable.", user: null }),
+  signUp: async () => ({ error: "Authentication unavailable." }),
+  signOut: async () => {},
+  refreshProfile: async () => {},
+}
+
+function getStoredLoginOriginPath(): string | null {
+  if (typeof window === "undefined") return null
+
+  let candidate: string | null = null
+  try {
+    candidate = window.localStorage.getItem(LOGIN_ORIGIN_STORAGE_KEY)
+  } catch {
+    return null
+  }
+
+  if (!candidate) return null
+
+  if (candidate === "/login") return candidate
+  if (/^\/gym\/[^/]+\/login$/.test(candidate)) return candidate
+
+  return null
+}
+
+async function getMemberSignOutRedirectPath(
+  client: ReturnType<typeof createClient>,
+  gymId: string | null | undefined,
+): Promise<string> {
+  if (!gymId) return "/login"
+
+  const { data } = await client
+    .from("gyms")
+    .select("code")
+    .eq("id", gymId)
+    .maybeSingle()
+
+  const gymCode = data?.code
+  if (!gymCode) return "/login"
+
+  return `/gym/${encodeURIComponent(gymCode)}/login`
+}
 
 function isInvalidRefreshTokenError(error: unknown): boolean {
   if (!error) return false
@@ -135,6 +183,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
+    const bootstrapUser = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser()
+
+        if (!isActive || hasResolved) return
+
+        if (error) {
+          if (isInvalidRefreshTokenError(error)) {
+            await recoverFromInvalidRefreshToken(supabase)
+            return
+          }
+
+          setUser(null)
+          setProfile(null)
+          setIsLoading(false)
+          return
+        }
+
+        hasResolved = true
+        const currentUser = data.user ?? null
+        setUser(currentUser)
+
+        if (currentUser) {
+          await fetchProfile(currentUser.id, supabase)
+        } else {
+          setProfile(null)
+          setIsLoading(false)
+        }
+      } catch {
+        if (!isActive || hasResolved) return
+        setUser(null)
+        setProfile(null)
+        setIsLoading(false)
+      }
+    }
+
+    void bootstrapUser()
+
     return () => {
       isActive = false
       clearTimeout(bootstrapTimeout)
@@ -224,6 +310,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setIsSigningOut(true)
     const client = getClient()
+    const storedLoginOriginPath = getStoredLoginOriginPath()
+    const targetLoginPath = storedLoginOriginPath
+      ?? (profile?.role === "member"
+        ? await getMemberSignOutRedirectPath(client, profile?.gymId)
+        : "/login")
     try {
       const { error } = await withTimeout(
         client.auth.signOut(),
@@ -243,11 +334,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null)
       setIsLoading(false)
       setIsSigningOut(false)
-      router.replace("/login")
+      router.replace(targetLoginPath)
       router.refresh()
       window.setTimeout(() => {
-        if (window.location.pathname !== "/login") {
-          window.location.assign("/login")
+        if (window.location.pathname !== targetLoginPath) {
+          window.location.assign(targetLoginPath)
         }
       }, NAVIGATION_FAILSAFE_MS)
     }
@@ -266,6 +357,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider")
-  return ctx
+  return ctx ?? FALLBACK_AUTH_CONTEXT
 }

@@ -31,6 +31,15 @@ interface PaymentRow {
 
 interface MemberOption { id: string; name: string; contact_number: string | null }
 interface PlanOption { id: string; name: string; price: number; duration_days: number; description: string | null }
+interface PromoOption {
+  id: string
+  name: string
+  discount_type: "percent" | "fixed"
+  discount_value: number
+  plan_id: string | null
+  valid_from: string | null
+  valid_until: string | null
+}
 
 export default function PaymentsPage() {
   const supabase = useMemo(() => createClient(), [])
@@ -38,6 +47,7 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentRow[]>([])
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([])
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([])
+  const [promoOptions, setPromoOptions] = useState<PromoOption[]>([])
   const [methodFilter, setMethodFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [isLoading, setIsLoading] = useState(true)
@@ -48,6 +58,7 @@ export default function PaymentsPage() {
   const [memberSearch, setMemberSearch] = useState("")
   const [selectedMember, setSelectedMember] = useState<MemberOption | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState("")
+  const [selectedPromoId, setSelectedPromoId] = useState("")
   const [payMethod, setPayMethod] = useState<"cash" | "gcash">("cash")
 
   const fetchData = useCallback(async () => {
@@ -83,8 +94,30 @@ export default function PaymentsPage() {
       .select("id, name, price, duration_days, description")
       .order("price")
     setPlanOptions(plans ?? [])
+
+    let promoQuery = supabase
+      .from("promos")
+      .select("id, name, discount_type, discount_value, plan_id, valid_from, valid_until")
+      .eq("is_active", true)
+
+    if (profile?.gymId) {
+      promoQuery = promoQuery.eq("gym_id", profile.gymId)
+    }
+
+    const { data: promos } = await promoQuery.order("created_at", { ascending: false })
+    setPromoOptions(
+      (promos ?? []).map((promo) => ({
+        id: promo.id,
+        name: promo.name,
+        discount_type: promo.discount_type === "fixed" ? "fixed" : "percent",
+        discount_value: promo.discount_value,
+        plan_id: promo.plan_id,
+        valid_from: promo.valid_from,
+        valid_until: promo.valid_until,
+      })),
+    )
     setIsLoading(false)
-  }, [supabase])
+  }, [supabase, profile?.gymId])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -100,10 +133,44 @@ export default function PaymentsPage() {
 
   const selectedPlan = planOptions.find((p) => p.id === selectedPlanId)
 
+  const applicablePromos = useMemo(() => {
+    if (!selectedPlanId) return []
+
+    const today = new Date().toISOString().split("T")[0]
+    return promoOptions.filter((promo) => {
+      const matchesPlan = !promo.plan_id || promo.plan_id === selectedPlanId
+      const startsOk = !promo.valid_from || promo.valid_from <= today
+      const endsOk = !promo.valid_until || promo.valid_until >= today
+      return matchesPlan && startsOk && endsOk
+    })
+  }, [promoOptions, selectedPlanId])
+
+  const selectedPromo = applicablePromos.find((promo) => promo.id === selectedPromoId) ?? null
+
+  const payableAmount = useMemo(() => {
+    if (!selectedPlan) return 0
+
+    const basePrice = selectedPlan.price
+    if (!selectedPromo) return basePrice
+
+    if (selectedPromo.discount_type === "percent") {
+      return Math.max(0, Math.round((basePrice - basePrice * (selectedPromo.discount_value / 100)) * 100) / 100)
+    }
+
+    return Math.max(0, Math.round((basePrice - selectedPromo.discount_value) * 100) / 100)
+  }, [selectedPlan, selectedPromo])
+
+  useEffect(() => {
+    if (!selectedPromoId) return
+    const stillValid = applicablePromos.some((promo) => promo.id === selectedPromoId)
+    if (!stillValid) setSelectedPromoId("")
+  }, [selectedPromoId, applicablePromos])
+
   function resetDialog() {
     setMemberSearch("")
     setSelectedMember(null)
     setSelectedPlanId("")
+    setSelectedPromoId("")
     setPayMethod("cash")
     setSaving(false)
   }
@@ -127,7 +194,7 @@ export default function PaymentsPage() {
       end_date: endDateStr,
       status: "active",
       payment_method: payMethod,
-      amount_paid: selectedPlan.price,
+      amount_paid: payableAmount,
       gym_id: profile?.gymId ?? null,
     })
 
@@ -335,6 +402,22 @@ export default function PaymentsPage() {
           />
 
           <ChoicePicker
+            label="Promo (Optional)"
+            value={selectedPromoId}
+            onChange={setSelectedPromoId}
+            options={[
+              { value: "", label: "No promo" },
+              ...applicablePromos.map((promo) => ({
+                value: promo.id,
+                label: promo.name,
+                sub: promo.discount_type === "percent"
+                  ? `${promo.discount_value}% off`
+                  : `₱${promo.discount_value.toLocaleString()} off`,
+              })),
+            ]}
+          />
+
+          <ChoicePicker
             label="Payment Method"
             value={payMethod}
             onChange={(v) => setPayMethod(v as "cash" | "gcash")}
@@ -349,8 +432,9 @@ export default function PaymentsPage() {
               rows={[
                 { label: "Member", value: selectedMember.name },
                 { label: "Plan", value: `${selectedPlan.name} (${selectedPlan.duration_days}d)` },
+                { label: "Promo", value: selectedPromo ? selectedPromo.name : "None" },
                 { label: "Method", value: payMethod === "cash" ? "Cash" : "GCash" },
-                { label: "Total", value: `₱${selectedPlan.price.toLocaleString()}` },
+                { label: "Total", value: `₱${payableAmount.toLocaleString()}` },
               ]}
             />
           )}

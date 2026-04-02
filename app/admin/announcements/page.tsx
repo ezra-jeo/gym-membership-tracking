@@ -6,6 +6,10 @@ import { useAuth } from '@/lib/auth-context';
 import { A, ACard, EmptyState, GhostBtn, LoadingSkeleton, PageHeader, PrimaryBtn } from '@/lib/admin-ui';
 import { toast } from 'sonner';
 import { Plus, Megaphone, Trash2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { announcementSchema } from '@/lib/validations';
+import type { z } from 'zod';
 
 interface AdminAnnouncement {
   id: string;
@@ -14,17 +18,30 @@ interface AdminAnnouncement {
   createdAt: string;
 }
 
+type AnnouncementFormData = z.infer<typeof announcementSchema>;
+
 export default function AdminAnnouncementsPage() {
   const { profile } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+  } = useForm<AnnouncementFormData>({
+    resolver: zodResolver(announcementSchema),
+    defaultValues: {
+      title: '',
+      body: '',
+    },
+  });
 
   useEffect(() => {
-    loadAnnouncements();
+    void loadAnnouncements();
   }, []);
 
   async function loadAnnouncements() {
@@ -40,20 +57,18 @@ export default function AdminAnnouncementsPage() {
           title: a.title,
           body: a.body,
           createdAt: a.created_at ?? new Date().toISOString(),
-        }))
+        })),
       );
     }
     setIsLoading(false);
   }
 
-  async function createAnnouncement(e: React.FormEvent) {
-    e.preventDefault();
+  const onSubmit = async (data: AnnouncementFormData) => {
     if (!profile) return;
 
-    // Create announcement
     const { error } = await supabase.from('announcements').insert({
-      title,
-      body,
+      title: data.title,
+      body: data.body,
       created_by: profile.id,
     });
 
@@ -62,20 +77,18 @@ export default function AdminAnnouncementsPage() {
       return;
     }
 
-    // Also post to feed
     await supabase.from('feed_items').insert({
       member_id: profile.id,
       type: 'announcement' as const,
-      title: `📢 ${title}`,
-      description: body,
+      title: `📢 ${data.title}`,
+      description: data.body,
     });
 
     toast.success('Announcement posted!');
     setShowForm(false);
-    setTitle('');
-    setBody('');
-    loadAnnouncements();
-  }
+    reset();
+    await loadAnnouncements();
+  };
 
   async function deleteAnnouncement(id: string) {
     const { error } = await supabase.from('announcements').delete().eq('id', id);
@@ -84,7 +97,7 @@ export default function AdminAnnouncementsPage() {
       return;
     }
     toast.success('Announcement deleted');
-    loadAnnouncements();
+    await loadAnnouncements();
   }
 
   if (isLoading) {
@@ -107,32 +120,30 @@ export default function AdminAnnouncementsPage() {
       {showForm && (
         <ACard className="p-4">
           <p className="text-base font-semibold mb-4" style={{ color: A.text }}>Create Announcement</p>
-          <form onSubmit={createAnnouncement} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
               <label className="text-sm" style={{ color: A.text2 }}>Title</label>
               <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                {...register('title')}
                 placeholder="e.g. Holiday Hours"
-                required
                 className="mt-1 w-full rounded-lg px-3 py-2 text-sm outline-none"
                 style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
               />
+              {errors.title && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.title.message}</p>}
             </div>
             <div>
               <label className="text-sm" style={{ color: A.text2 }}>Message</label>
               <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
+                {...register('body')}
                 placeholder="Write your announcement..."
-                required
                 rows={4}
                 className="mt-1 w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
                 style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
               />
+              {errors.body && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.body.message}</p>}
             </div>
             <div className="flex gap-2">
-              <PrimaryBtn type="submit">Post Announcement</PrimaryBtn>
+              <PrimaryBtn type="submit" disabled={isSubmitting}>{isSubmitting ? 'Posting...' : 'Post Announcement'}</PrimaryBtn>
               <button
                 type="button"
                 onClick={() => setShowForm(false)}

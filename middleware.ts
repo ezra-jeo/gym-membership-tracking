@@ -1,6 +1,18 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"  
 
+function addSecurityHeaders(response: NextResponse): NextResponse {
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  response.headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=()',
+  )
+  return response
+}
+
 function isInvalidRefreshTokenError(error: unknown): boolean {
   if (!error) return false
 
@@ -64,7 +76,7 @@ export async function middleware(request: NextRequest) {
 
   // Public pages should not pay auth/profile lookup cost.
   if (isGymOrKioskRoute || isMarketingRoute) {
-    return supabaseResponse
+    return addSecurityHeaders(supabaseResponse)
   }
 
   if (isAuthRoute) {
@@ -75,12 +87,12 @@ export async function middleware(request: NextRequest) {
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
         clearSupabaseAuthCookies(request, supabaseResponse)
-        return supabaseResponse
+        return addSecurityHeaders(supabaseResponse)
       }
       throw error
     }
 
-    if (!user) return supabaseResponse
+    if (!user) return addSecurityHeaders(supabaseResponse)
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -89,11 +101,11 @@ export async function middleware(request: NextRequest) {
       .maybeSingle()
 
     if (!profile || profile.status === "pending" || profile.status === "rejected") {
-      return supabaseResponse
+      return addSecurityHeaders(supabaseResponse)
     }
 
     const redirectTo = profile.role === "member" ? "/member" : "/admin"
-    return NextResponse.redirect(new URL(redirectTo, request.url))
+    return addSecurityHeaders(NextResponse.redirect(new URL(redirectTo, request.url)))
   }
 
   let user = null
@@ -106,7 +118,7 @@ export async function middleware(request: NextRequest) {
       url.pathname = "/login"
       const redirect = NextResponse.redirect(url)
       clearSupabaseAuthCookies(request, redirect)
-      return redirect
+      return addSecurityHeaders(redirect)
     }
     throw error
   }
@@ -115,7 +127,7 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
-    return NextResponse.redirect(url)
+    return addSecurityHeaders(NextResponse.redirect(url))
   }
 
   // Role-based access control
@@ -128,25 +140,25 @@ export async function middleware(request: NextRequest) {
 
   // No profile yet (trigger delay) or pending/rejected — send to login
   if (!profile || profile.status === "pending" || profile.status === "rejected") {
-    return NextResponse.redirect(new URL("/login", request.url))
+    return addSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)))
   }
 
   // Admin routes — only admin/staff/owner
   if (pathname.startsWith("/admin")) {
     if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
-      return NextResponse.redirect(new URL("/member", request.url))
+      return addSecurityHeaders(NextResponse.redirect(new URL("/member", request.url)))
     }
   }
 
   // Redirect stale /dashboard URLs to /admin
   if (pathname.startsWith("/dashboard")) {
-    return NextResponse.redirect(new URL("/admin", request.url))
+    return addSecurityHeaders(NextResponse.redirect(new URL("/admin", request.url)))
   }
 
   if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
   supabaseResponse.headers.set("x-user-role", profile.role)
 
-  return supabaseResponse
+  return addSecurityHeaders(supabaseResponse)
 }
 
 export const config = {

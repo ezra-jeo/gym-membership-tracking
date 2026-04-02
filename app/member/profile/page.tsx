@@ -8,6 +8,12 @@ import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import { PageSkeleton } from '@/components/ui/loading-screen';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { profileEditSchema } from '@/lib/validations';
+import type { z } from 'zod';
+
+type ProfileEditFormData = z.infer<typeof profileEditSchema>;
 
 export default function ProfilePage() {
   const { profile, signOut, isSigningOut } = useAuth();
@@ -15,8 +21,6 @@ export default function ProfilePage() {
   const supabase = useMemo(() => createClient(), []);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editContact, setEditContact] = useState('');
   const [membershipInfo, setMembershipInfo] = useState<{
     planName: string;
     startDate: string;
@@ -24,17 +28,31 @@ export default function ProfilePage() {
     status: string;
   } | null>(null);
 
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+  } = useForm<ProfileEditFormData>({
+    resolver: zodResolver(profileEditSchema),
+    defaultValues: {
+      name: '',
+      contact_number: '',
+    },
+  });
+
   useEffect(() => {
     if (!profile) {
-      router.push("/login"); 
-      router.refresh();
       return;
-    };
-    generateQR();
-    loadMembership();
-    setEditName(profile.name);
-    setEditContact(profile.contactNumber ?? '');
-  }, [profile]);
+    }
+
+    void generateQR();
+    void loadMembership();
+    reset({
+      name: profile.name,
+      contact_number: profile.contactNumber ?? '',
+    });
+  }, [profile, reset, router]);
 
   async function generateQR() {
     if (!qrCanvasRef.current || !profile) return;
@@ -74,12 +92,12 @@ export default function ProfilePage() {
     }
   }
 
-  async function saveProfile() {
+  const onSave = async (data: ProfileEditFormData) => {
     if (!profile) return;
 
     const { error } = await supabase
       .from('profiles')
-      .update({ name: editName, contact_number: editContact || null })
+      .update({ name: data.name, contact_number: data.contact_number || null })
       .eq('id', profile.id);
 
     if (error) {
@@ -89,9 +107,8 @@ export default function ProfilePage() {
 
     toast.success('Profile updated!');
     setIsEditing(false);
-    // Refresh the page to update the auth context
     router.refresh();
-  }
+  };
 
   const handleSignOut = async () => {
     if (isSigningOut) return;
@@ -124,7 +141,6 @@ export default function ProfilePage() {
         </button>
       </div>
 
-      {/* QR Code Section */}
       <div
         className="rounded-xl p-6 border text-center"
         style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
@@ -143,7 +159,6 @@ export default function ProfilePage() {
         </p>
       </div>
 
-      {/* Profile Info */}
       <div
         className="rounded-xl p-5 border"
         style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
@@ -167,7 +182,8 @@ export default function ProfilePage() {
           ) : (
             <div className="flex items-center gap-2">
               <button
-                onClick={saveProfile}
+                onClick={handleSubmit(onSave)}
+                disabled={isSubmitting}
                 className="flex items-center gap-1 text-sm font-medium"
                 style={{ color: 'var(--color-success)' }}
               >
@@ -185,19 +201,18 @@ export default function ProfilePage() {
           )}
         </div>
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(onSave)} className="space-y-4">
           <div>
             <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Name</label>
             {isEditing ? (
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm"
-                style={{
-                  borderColor: 'var(--color-light-gray)',
-                  color: 'var(--color-text-primary)',
-                }}
-              />
+              <>
+                <input
+                  {...register('name')}
+                  className="w-full mt-1 px-3 py-2 rounded-lg border text-sm"
+                  style={{ borderColor: 'var(--color-light-gray)', color: 'var(--color-text-primary)' }}
+                />
+                {errors.name && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.name.message}</p>}
+              </>
             ) : (
               <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>{profile.name}</p>
             )}
@@ -209,26 +224,24 @@ export default function ProfilePage() {
           <div>
             <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Contact Number</label>
             {isEditing ? (
-              <input
-                value={editContact}
-                onChange={(e) => setEditContact(e.target.value)}
-                placeholder="09XX XXX XXXX"
-                className="w-full mt-1 px-3 py-2 rounded-lg border text-sm"
-                style={{
-                  borderColor: 'var(--color-light-gray)',
-                  color: 'var(--color-text-primary)',
-                }}
-              />
+              <>
+                <input
+                  {...register('contact_number')}
+                  placeholder="09XX XXX XXXX"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border text-sm"
+                  style={{ borderColor: 'var(--color-light-gray)', color: 'var(--color-text-primary)' }}
+                />
+                {errors.contact_number && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.contact_number.message}</p>}
+              </>
             ) : (
               <p className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
                 {profile.contactNumber || 'Not set'}
               </p>
             )}
           </div>
-        </div>
+        </form>
       </div>
 
-      {/* Membership Info */}
       <div
         className="rounded-xl p-5 border"
         style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}
@@ -289,7 +302,6 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* Member since */}
       <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
         Member since {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
       </p>

@@ -33,6 +33,7 @@ type GymProfileRow = {
   tagline: string | null;
   description: string | null;
   brand_color: string | null;
+  secondary_color: string | null;
   logo_url: string | null;
   cover_url: string | null;
   logo_path: string | null;
@@ -126,6 +127,8 @@ export default function GymProfilePage() {
   const [description, setDescription] = useState('');
   const [brandColor, setBrandColor] = useState('#D4956A');
   const [brandColorError, setBrandColorError] = useState('');
+  const [secondaryColor, setSecondaryColor] = useState('#2C2C2C');
+  const [secondaryColorError, setSecondaryColorError] = useState('');
 
   const [logoPath, setLogoPath] = useState('');
   const [coverPath, setCoverPath] = useState('');
@@ -234,7 +237,7 @@ export default function GymProfilePage() {
   async function loadGym(gymId: string) {
     const primary = await supabase
       .from('gyms')
-      .select('id, name, code, is_published, tagline, description, brand_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
+      .select('id, name, code, is_published, tagline, description, brand_color, secondary_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
       .eq('id', gymId)
       .maybeSingle();
 
@@ -268,6 +271,7 @@ export default function GymProfilePage() {
     setTagline(data.tagline ?? '');
     setDescription(data.description ?? '');
     setBrandColor(data.brand_color && isValidHex(data.brand_color) ? data.brand_color : '#D4956A');
+    setSecondaryColor(data.secondary_color && isValidHex(data.secondary_color) ? data.secondary_color : '#2C2C2C');
     setLogoPath(data.logo_path ?? '');
     setCoverPath(data.cover_path ?? '');
 
@@ -685,7 +689,14 @@ export default function GymProfilePage() {
       return;
     }
 
+    const normalizedSecondary = secondaryColor.trim().toUpperCase();
+    if (!isValidHex(normalizedSecondary)) {
+      setSecondaryColorError('Secondary color must be a valid #RRGGBB value.');
+      return;
+    }
+
     setBrandColorError('');
+    setSecondaryColorError('');
     setIsSaving(true);
     isSavingRef.current = true;
 
@@ -703,6 +714,7 @@ export default function GymProfilePage() {
         tagline: tagline.trim() || null,
         description: description.trim() || null,
         brand_color: normalizedColor,
+        secondary_color: normalizedSecondary,
         logo_path: logoPath || null,
         cover_path: coverPath || null,
         // Strip any accidental query params before persisting
@@ -941,6 +953,39 @@ export default function GymProfilePage() {
           </div>
           {brandColorError && (
             <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{brandColorError}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Secondary Color</label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="color"
+              value={isValidHex(secondaryColor) ? secondaryColor : '#2C2C2C'}
+              onChange={(e) => {
+                setSecondaryColor(e.target.value.toUpperCase());
+                setSecondaryColorError('');
+              }}
+              className="h-10 w-12 rounded border"
+              style={{ borderColor: 'var(--color-surface)' }}
+            />
+            <input
+              value={secondaryColor}
+              onChange={(e) => {
+                setSecondaryColor(e.target.value.toUpperCase());
+                setSecondaryColorError('');
+              }}
+              placeholder="#2C2C2C"
+              className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-white)' }}
+            />
+            <div
+              className="h-10 w-10 rounded-lg border"
+              style={{ borderColor: 'var(--color-surface)', backgroundColor: isValidHex(secondaryColor) ? secondaryColor : '#2C2C2C' }}
+            />
+          </div>
+          {secondaryColorError && (
+            <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{secondaryColorError}</p>
           )}
         </div>
       </section>

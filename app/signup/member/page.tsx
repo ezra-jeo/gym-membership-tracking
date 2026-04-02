@@ -6,6 +6,12 @@ import Link from 'next/link';
 import { Search, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { memberSignUpSchema } from '@/lib/validations';
+import type { z } from 'zod';
+
+type MemberSignUpFormData = z.infer<typeof memberSignUpSchema>;
 
 export default function MemberSignUpPage() {
   return (
@@ -33,11 +39,21 @@ function MemberSignUpPageContent() {
   const [selectedGym, setSelectedGym] = useState<{ id: string; name: string } | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<MemberSignUpFormData>({
+    resolver: zodResolver(memberSignUpSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      password: '',
+    },
+  });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefillAttemptedRef = useRef(false);
@@ -117,8 +133,7 @@ function MemberSignUpPageContent() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
-      const { data, error } = await supabase
-        .rpc('search_gyms', { p_query: query });
+      const { data, error } = await supabase.rpc('search_gyms', { p_query: query });
 
       if (error) {
         console.error('Gym search error:', error.message);
@@ -140,51 +155,60 @@ function MemberSignUpPageContent() {
     }, 300);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const onSubmit = async (data: MemberSignUpFormData) => {
     setError('');
-    if (!selectedGym) { setError('Please select a gym first'); return; }
-    if (!name || !email || !password) { setError('Please fill in all fields'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (!selectedGym) {
+      setError('Please select a gym first');
+      return;
+    }
 
     setIsLoading(true);
 
-    // 1. Create auth user
+    const { name, email, password } = data;
+
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name, role: 'member' } },
     });
-    if (authError) { setError(authError.message); setIsLoading(false); return; }
-    if (!authData.user) { setError('Sign-up failed'); setIsLoading(false); return; }
 
-    console.log("Passed here !");
+    if (authError) {
+      setError(authError.message);
+      setIsLoading(false);
+      return;
+    }
+    if (!authData.user) {
+      setError('Sign-up failed');
+      setIsLoading(false);
+      return;
+    }
 
-    // 2. Sign in to get an authenticated session so the profile update is authorized
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) { setError('Account created but could not sign in: ' + signInError.message); setIsLoading(false); return; }
+    if (signInError) {
+      setError(`Account created but could not sign in: ${signInError.message}`);
+      setIsLoading(false);
+      return;
+    }
 
-    console.log("Passed here !!");
-
-    // 3. Upsert the profile — works whether trigger created the row or not
     const qrCode = `stren://checkin/${selectedGym.id}/${authData.user.id}`;
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert(
         { id: authData.user.id, email, name, role: 'member' as const, status: 'pending' as const, gym_id: selectedGym.id, qr_code: qrCode },
-        { onConflict: 'id' }
+        { onConflict: 'id' },
       );
 
-    if (profileError) { setError(profileError.message); setIsLoading(false); return; }
+    if (profileError) {
+      setError(profileError.message);
+      setIsLoading(false);
+      return;
+    }
 
-    console.log("Passed here !!");
-
-    // 4. Sign out — member must wait for admin approval before logging in
     await supabase.auth.signOut();
 
     setIsLoading(false);
     setStep('done');
-  }
+  };
 
   const inputStyle = {
     backgroundColor: 'var(--color-white)',
@@ -209,7 +233,6 @@ function MemberSignUpPageContent() {
             <ArrowLeft className="h-4 w-4" /> Back
           </Link>
 
-          {/* Done */}
           {step === 'done' ? (
             <div className="text-center py-4">
               <CheckCircle2 className="h-16 w-16 mx-auto mb-4" style={{ color: 'var(--color-primary)' }} />
@@ -224,8 +247,6 @@ function MemberSignUpPageContent() {
                 Go to Login
               </Link>
             </div>
-
-          /* Step 1: Find gym */
           ) : step === 'gym' ? (
             <>
               <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)', fontWeight: 800 }}>
@@ -251,15 +272,23 @@ function MemberSignUpPageContent() {
                   {gyms.map((g) => (
                     <button
                       key={g.id}
-                      onClick={() => { setSelectedGym({ id: g.id, name: g.name }); setStep('details'); }}
+                      onClick={() => {
+                        setSelectedGym({ id: g.id, name: g.name });
+                        setStep('details');
+                      }}
                       className="w-full text-left p-4 rounded-lg border transition-all"
                       style={{ borderColor: 'var(--color-light-gray)', borderWidth: '1.5px' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-light-gray)'; }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--color-primary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--color-light-gray)';
+                      }}
                     >
                       <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{g.name}</p>
                       <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        Code: {g.code}{g.address ? ` · ${g.address}` : ''}
+                        Code: {g.code}
+                        {g.address ? ` · ${g.address}` : ''}
                       </p>
                     </button>
                   ))}
@@ -271,8 +300,6 @@ function MemberSignUpPageContent() {
                 </p>
               )}
             </>
-
-          /* Step 2: Account details */
           ) : (
             <>
               <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)', fontWeight: 800 }}>
@@ -282,19 +309,21 @@ function MemberSignUpPageContent() {
                 Joining <strong>{selectedGym?.name}</strong>{' '}
                 <button onClick={() => setStep('gym')} className="underline" style={{ color: 'var(--color-primary)' }}>change</button>
               </p>
-              <form onSubmit={handleSubmit} className="space-y-5">
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Full Name</label>
-                  <input type="text" placeholder="Juan Dela Cruz" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                  <input {...register('name')} type="text" placeholder="Juan Dela Cruz" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                  {errors.name && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.name.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Email</label>
-                  <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                  <input {...register('email')} type="email" placeholder="you@example.com" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                  {errors.email && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.email.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-text-secondary)' }}>Password</label>
-                  <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
-                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Must be at least 6 characters</p>
+                  <input {...register('password')} type="password" placeholder="••••••••" disabled={isLoading} className="w-full px-4 py-3 rounded-lg border focus:outline-none" style={inputStyle} />
+                  {errors.password && <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>{errors.password.message}</p>}
                 </div>
                 {error && <p className="text-sm font-medium" style={{ color: 'var(--color-danger)' }}>{error}</p>}
                 <button type="submit" disabled={isLoading} className="w-full py-3 rounded-lg font-semibold uppercase tracking-widest transition-all hover:scale-105 active:scale-100" style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)', color: 'var(--color-white)', boxShadow: '0 4px 14px rgba(212,149,106,0.4)' }}>

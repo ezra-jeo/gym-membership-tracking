@@ -1,10 +1,18 @@
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { rateLimit } from '@/lib/rate-limit';
 
 const ADMIN_ROLES = new Set(['owner', 'admin', 'staff']);
 
 export async function POST(request: Request) {
+  const ip = (await headers()).get('x-forwarded-for') ?? 'unknown';
+  const { success } = rateLimit(`revalidate:${ip}`, 10, 60_000);
+  if (!success) {
+    return Response.json({ error: 'Too many requests' }, { status: 429 });
+  }
+
   let code = '';
 
   try {
