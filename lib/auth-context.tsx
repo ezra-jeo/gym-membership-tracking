@@ -18,7 +18,7 @@ interface AuthContextValue {
   profile: Profile | null
   isLoading: boolean
   isSigningOut: boolean
-  signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null }>
+  signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null; profile: Profile | null }>
   signUp: (email: string, password: string, name: string, role?: "member" | "admin") => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -31,7 +31,7 @@ const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
   profile: null,
   isLoading: false,
   isSigningOut: false,
-  signIn: async () => ({ error: "Authentication unavailable.", user: null }),
+  signIn: async () => ({ error: "Authentication unavailable.", user: null, profile: null }),
   signUp: async () => ({ error: "Authentication unavailable." }),
   signOut: async () => {},
   refreshProfile: async () => {},
@@ -279,7 +279,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("unhandledrejection", handleUnhandledRejection)
   }, [recoverFromInvalidRefreshToken, shouldSkipAuthBootstrap, supabase])
 
-  async function fetchProfile(userId: string, client = getClient()) {
+  async function fetchProfile(userId: string, client = getClient()): Promise<Profile | null> {
+    let built: Profile | null = null
     try {
       const { data, error } = await withTimeout(
         client
@@ -294,16 +295,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
           await recoverFromInvalidRefreshToken(client)
-          return
+          return null
         }
 
         setProfile(null)
-        return
+        return null
       }
 
       if (data) {
         recentProfileHydrationRef.current = { userId, at: Date.now() }
-        setProfile({
+        built = {
           id: data.id,
           email: data.email,
           name: data.name,
@@ -314,7 +315,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatarUrl: data.avatar_url,
           qrCode: data.qr_code ?? "",
           createdAt: data.created_at ?? new Date().toISOString(),
-        })
+        }
+        setProfile(built)
       } else {
         setProfile(null)
       }
@@ -323,18 +325,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
+    return built
   }
 
   async function signIn(email: string, password: string) {
     const client = getClient()
     const { data, error } = await client.auth.signInWithPassword({ email, password })
 
+    let fetchedProfile: Profile | null = null
     if (data.user) {
       setIsLoading(true)
-      await fetchProfile(data.user.id, client)
+      setUser(data.user)
+      fetchedProfile = await fetchProfile(data.user.id, client)
     }
 
-    return { error: error?.message ?? null, user: data.user ?? null }
+    return { error: error?.message ?? null, user: data.user ?? null, profile: fetchedProfile }
   }
 
   async function signUp(

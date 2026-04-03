@@ -125,7 +125,7 @@ export default function AdminLayout({
       .from('gyms')
       .select('name')
       .eq('id', profile.gymId)
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
         if (data?.name) setGymName(data.name);
       });

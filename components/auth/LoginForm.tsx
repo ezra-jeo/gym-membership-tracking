@@ -101,7 +101,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         }
       }
 
-      const { error: authError, user } = await signIn(email, password);
+      const { error: authError, user, profile } = await signIn(email, password);
 
       if (authError) {
         setError(authError);
@@ -112,8 +112,6 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         setError('Login failed. Please try again.');
         return;
       }
-
-      const profile = await getProfileWithRetry(user.id);
 
       if (profile?.status === 'pending') {
         setError('Your account is awaiting gym approval.');
@@ -135,7 +133,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
 
       if (gymCode) {
         const targetGymId = await resolveGymIdByCode(gymCode);
-        if (!targetGymId || profile?.gym_id !== targetGymId) {
+        if (!targetGymId || profile?.gymId !== targetGymId) {
           setError('This account is not registered to this gym');
           await signOut();
           return;
