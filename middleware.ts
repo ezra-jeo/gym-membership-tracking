@@ -106,7 +106,7 @@ export async function middleware(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle()
 
-    if (!profile || profile.status === "pending" || profile.status === "rejected") {
+    if (!profile || profile.status === "rejected") {
       return addSecurityHeaders(supabaseResponse, pathname)
     }
 
@@ -144,8 +144,8 @@ export async function middleware(request: NextRequest) {
     .eq("id", user.id)
     .maybeSingle()
 
-  // No profile yet (trigger delay) or pending/rejected — send to login
-  if (!profile || profile.status === "pending" || profile.status === "rejected") {
+  // No profile yet (trigger delay) or rejected — send to login
+  if (!profile || profile.status === "rejected") {
     return addSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), pathname)
   }
 

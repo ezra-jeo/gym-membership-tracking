@@ -20,6 +20,7 @@ const CLEANUP_DELAY_MS = 30000;
 const CLEANUP_LIST_TIMEOUT_MS = 20000;
 const CLEANUP_REMOVE_TIMEOUT_MS = 30000;
 const REVALIDATE_TIMEOUT_MS = 8000;
+const GYM_PROFILE_LOAD_TIMEOUT_MS = 10000;
 
 type HoursState = Record<(typeof DAYS)[number], string>;
 type SocialState = { facebook: string; instagram: string; website: string };
@@ -83,13 +84,13 @@ function getAssetKindFromName(name: string): 'logo' | 'cover' | null {
   return null;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+function withTimeout<T>(promiseLike: PromiseLike<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
       reject(new Error(timeoutMessage));
     }, timeoutMs);
 
-    promise.then(
+    Promise.resolve(promiseLike).then(
       (value) => {
         window.clearTimeout(timeoutId);
         resolve(value);
@@ -217,11 +218,13 @@ export default function GymProfilePage() {
     if (authLoading) return;
 
     if (!profile) {
+      setIsLoading(false);
       router.replace('/login');
       return;
     }
 
     if (profile.role !== 'owner') {
+      setIsLoading(false);
       router.replace('/admin');
       return;
     }
@@ -235,35 +238,47 @@ export default function GymProfilePage() {
   }, [authLoading, profile, router]);
 
   async function loadGym(gymId: string) {
-    const primary = await supabase
-      .from('gyms')
-      .select('id, name, code, is_published, tagline, description, brand_color, secondary_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
-      .eq('id', gymId)
-      .maybeSingle();
+    setIsLoading(true);
+    try {
+      const primary = await retryOnBenignLock(() =>
+        withTimeout(
+          supabase
+            .from('gyms')
+            .select('id, name, code, is_published, tagline, description, brand_color, secondary_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
+            .eq('id', gymId)
+            .maybeSingle(),
+          GYM_PROFILE_LOAD_TIMEOUT_MS,
+          'Gym profile load timed out.',
+        )
+      );
 
-    let data = primary.data as GymProfileRow | null;
+      let data = primary.data as GymProfileRow | null;
 
-    if (primary.error) {
-      const fallback = await supabase
-        .from('gyms')
-        .select('id, name, code, tagline, description, brand_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
-        .eq('id', gymId)
-        .maybeSingle();
+      if (primary.error) {
+        const fallback = await retryOnBenignLock(() =>
+          withTimeout(
+            supabase
+              .from('gyms')
+              .select('id, name, code, tagline, description, brand_color, logo_url, cover_url, logo_path, cover_path, operating_hours, amenities, social_links, team_members, pricing_packages, map_embed_url, directions')
+              .eq('id', gymId)
+              .maybeSingle(),
+            GYM_PROFILE_LOAD_TIMEOUT_MS,
+            'Gym profile fallback load timed out.',
+          )
+        );
 
-      if (fallback.error || !fallback.data) {
-        toast.error('Unable to load gym profile.');
-        setIsLoading(false);
-        return;
+        if (fallback.error || !fallback.data) {
+          toast.error('Unable to load gym profile.');
+          return;
+        }
+
+        data = fallback.data as GymProfileRow;
       }
 
-      data = fallback.data as GymProfileRow;
-    }
-
-    if (!data) {
-      toast.error('Unable to load gym profile.');
-      setIsLoading(false);
-      return;
-    }
+      if (!data) {
+        toast.error('Unable to load gym profile.');
+        return;
+      }
 
     setGymName(data.name ?? '');
     setGymCode(data.code ?? '');
@@ -331,10 +346,14 @@ export default function GymProfilePage() {
       })));
     }
 
-    setMapEmbedUrl(data.map_embed_url ?? '');
-    setDirections(data.directions ?? '');
-
-    setIsLoading(false);
+      setMapEmbedUrl(data.map_embed_url ?? '');
+      setDirections(data.directions ?? '');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown load error.';
+      toast.error(`Unable to load gym profile: ${message}`);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function compressImage(
@@ -749,7 +768,7 @@ export default function GymProfilePage() {
       }).eq('id', profile.gymId);
 
       const { error } = await withTimeout(
-        Promise.resolve(saveOperation),
+        saveOperation,
         SAVE_TIMEOUT_MS,
         'Save request timed out. Please try again.',
       );
@@ -833,26 +852,20 @@ export default function GymProfilePage() {
           borderColor: isPublished ? 'var(--color-success)' : 'var(--color-warning)',
         }}
       >
-        {isPublished ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              Your page is live.
-            </p>
-            <Link
-              href={`/gym/${gymCode}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm inline-flex items-center gap-1"
-              style={{ color: 'var(--color-success)' }}
-            >
-              Preview as visitor <ExternalLink size={14} />
-            </Link>
-          </div>
-        ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-            Your page is currently hidden from the public.
+            {isPublished ? 'Your page is live.' : 'Your page is currently hidden from the public.'}
           </p>
-        )}
+          <Link
+            href={`/gym/${gymCode}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm inline-flex items-center gap-1"
+            style={{ color: isPublished ? 'var(--color-success)' : 'var(--color-warning)' }}
+          >
+            {isPublished ? 'Preview as visitor' : 'Preview as admin'} <ExternalLink size={14} />
+          </Link>
+        </div>
       </div>
 
       <section
@@ -1422,4 +1435,37 @@ export default function GymProfilePage() {
       </div>
     </div>
   );
+}
+
+function isBenignLockAbortError(error: unknown): boolean {
+  if (!error) return false;
+
+  const message = typeof error === 'string'
+    ? error
+    : error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message?: unknown }).message ?? '')
+        : '';
+
+  const normalized = message.toLowerCase();
+  return normalized.includes('lock broken by another request') && normalized.includes('steal');
+}
+
+async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isBenignLockAbortError(error) || attempt === retries) {
+        throw error;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+    }
+  }
+
+  throw lastError ?? new Error('Unknown lock error.');
 }

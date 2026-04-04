@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Search, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,6 +33,7 @@ function MemberSignupFallback() {
 function MemberSignUpPageContent() {
   const supabase = useMemo(() => createClient(), []);
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [step, setStep] = useState<'gym' | 'details' | 'done'>('gym');
   const [gymQuery, setGymQuery] = useState('');
@@ -194,7 +196,7 @@ function MemberSignUpPageContent() {
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert(
-        { id: authData.user.id, email, name, role: 'member' as const, status: 'pending' as const, gym_id: selectedGym.id, qr_code: qrCode },
+        { id: authData.user.id, email, name, role: 'member' as const, status: 'active' as const, gym_id: selectedGym.id, qr_code: qrCode },
         { onConflict: 'id' },
       );
 
@@ -204,10 +206,8 @@ function MemberSignUpPageContent() {
       return;
     }
 
-    await supabase.auth.signOut();
-
     setIsLoading(false);
-    setStep('done');
+    router.replace('/member');
   };
 
   const inputStyle = {
@@ -240,8 +240,7 @@ function MemberSignUpPageContent() {
                 Account Created!
               </h2>
               <p className="text-base mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-                Your account is awaiting gym approval. You&apos;ll be able to log in once{' '}
-                <strong>{selectedGym?.name}</strong> approves your membership.
+                Your account for <strong>{selectedGym?.name}</strong> is ready. You can now log in.
               </p>
               <Link href="/login" className="inline-block py-3 px-8 rounded-lg font-semibold" style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))', color: 'var(--color-white)' }}>
                 Go to Login

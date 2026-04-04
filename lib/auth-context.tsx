@@ -18,7 +18,7 @@ interface AuthContextValue {
   profile: Profile | null
   isLoading: boolean
   isSigningOut: boolean
-  signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null }>
+  signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null; profile: Profile | null }>
   signUp: (email: string, password: string, name: string, role?: "member" | "admin") => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -31,7 +31,7 @@ const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
   profile: null,
   isLoading: false,
   isSigningOut: false,
-  signIn: async () => ({ error: "Authentication unavailable.", user: null }),
+  signIn: async () => ({ error: "Authentication unavailable.", user: null, profile: null }),
   signUp: async () => ({ error: "Authentication unavailable." }),
   signOut: async () => {},
   refreshProfile: async () => {},
@@ -110,6 +110,24 @@ function isBenignLockAbortError(error: unknown): boolean {
   )
 }
 
+async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): Promise<T> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (!isBenignLockAbortError(error) || attempt === retries) {
+        throw error
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+    }
+  }
+
+  throw lastError ?? new Error("Unknown lock error")
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -165,8 +183,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (shouldSkipAuthBootstrap || !supabase) {
-      setUser(null)
-      setProfile(null)
+      // Keep any existing auth/profile state when navigating through public routes
+      // (e.g. /gym previews) to avoid teardown/re-hydration races when returning to /admin.
       setIsLoading(false)
       return
     }
@@ -216,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const bootstrapUser = async () => {
       try {
-        const { data, error } = await supabase.auth.getUser()
+        const { data, error } = await retryOnBenignLock(() => supabase.auth.getUser(), 1)
 
         if (!isActive || hasResolved) return
 
@@ -279,31 +297,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("unhandledrejection", handleUnhandledRejection)
   }, [recoverFromInvalidRefreshToken, shouldSkipAuthBootstrap, supabase])
 
-  async function fetchProfile(userId: string, client = getClient()) {
+  async function fetchProfile(userId: string, client = getClient()): Promise<Profile | null> {
+    let built: Profile | null = null
     try {
-      const { data, error } = await withTimeout(
-        client
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle(),
-        PROFILE_FETCH_TIMEOUT_MS,
-        "Profile lookup timed out.",
+      const { data, error } = await retryOnBenignLock(
+        () => withTimeout(
+          client
+            .from("profiles")
+            .select("*")
+            .eq("id", userId)
+            .maybeSingle(),
+          PROFILE_FETCH_TIMEOUT_MS,
+          "Profile lookup timed out.",
+        ),
+        2,
       )
 
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
           await recoverFromInvalidRefreshToken(client)
-          return
+          return null
         }
 
         setProfile(null)
-        return
+        return null
       }
 
       if (data) {
         recentProfileHydrationRef.current = { userId, at: Date.now() }
-        setProfile({
+        built = {
           id: data.id,
           email: data.email,
           name: data.name,
@@ -314,7 +336,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           avatarUrl: data.avatar_url,
           qrCode: data.qr_code ?? "",
           createdAt: data.created_at ?? new Date().toISOString(),
-        })
+        }
+        setProfile(built)
       } else {
         setProfile(null)
       }
@@ -323,18 +346,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
+    return built
   }
 
   async function signIn(email: string, password: string) {
     const client = getClient()
     const { data, error } = await client.auth.signInWithPassword({ email, password })
 
+    let fetchedProfile: Profile | null = null
     if (data.user) {
       setIsLoading(true)
-      await fetchProfile(data.user.id, client)
+      setUser(data.user)
+      fetchedProfile = await fetchProfile(data.user.id, client)
     }
 
-    return { error: error?.message ?? null, user: data.user ?? null }
+    return { error: error?.message ?? null, user: data.user ?? null, profile: fetchedProfile }
   }
 
   async function signUp(

@@ -110,7 +110,7 @@ export default async function GymSignUpPage({ params }: PageProps) {
               Join {gym.name}
             </h2>
             <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              Create your member account. Your gym will approve you before you can log in.
+              Create your member account and start using your gym access right away.
             </p>
           </div>
 
@@ -122,7 +122,7 @@ export default async function GymSignUpPage({ params }: PageProps) {
             )}
           </div>
 
-          <GymSignUpForm gymCode={code} gymId={gym.id} gymName={gym.name} />
+          <GymSignUpForm gymCode={code} gymId={gym.id} />
 
           <p className="mt-8 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             Already have an account?{' '}

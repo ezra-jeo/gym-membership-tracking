@@ -1,11 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memberSignUpSchema } from '@/lib/validations';
 import { createClient } from '@/lib/supabase';
-import { CheckCircle2 } from 'lucide-react';
 import type { z } from 'zod';
 
 type FormData = z.infer<typeof memberSignUpSchema>;
@@ -13,7 +13,6 @@ type FormData = z.infer<typeof memberSignUpSchema>;
 interface GymSignUpFormProps {
   gymCode: string;
   gymId: string;
-  gymName: string;
 }
 
 const inputStyle = {
@@ -23,9 +22,9 @@ const inputStyle = {
   color: 'var(--color-text-primary)',
 };
 
-export function GymSignUpForm({ gymCode, gymId, gymName }: GymSignUpFormProps) {
+export function GymSignUpForm({ gymCode, gymId }: GymSignUpFormProps) {
   const supabase = useMemo(() => createClient(), []);
-  const [done, setDone] = useState(false);
+  const router = useRouter();
   const [serverError, setServerError] = useState('');
 
   const {
@@ -70,7 +69,7 @@ export function GymSignUpForm({ gymCode, gymId, gymName }: GymSignUpFormProps) {
         email: data.email,
         name: data.name,
         role: 'member' as const,
-        status: 'pending' as const,
+        status: 'active' as const,
         gym_id: gymId,
         qr_code: qrCode,
       },
@@ -81,26 +80,8 @@ export function GymSignUpForm({ gymCode, gymId, gymName }: GymSignUpFormProps) {
       return;
     }
 
-    await supabase.auth.signOut();
-    setDone(true);
+    router.replace('/member');
   };
-
-  if (done) {
-    return (
-      <div className="text-center py-6">
-        <CheckCircle2 className="h-16 w-16 mx-auto mb-4" style={{ color: 'var(--color-primary)' }} />
-        <h3
-          className="text-xl font-bold mb-2"
-          style={{ color: 'var(--color-text-primary)', fontFamily: 'var(--font-heading)' }}
-        >
-          Account Created!
-        </h3>
-        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          Your account is awaiting approval from <strong>{gymName}</strong>. You can log in once they approve your membership.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" data-gym-code={gymCode}>
