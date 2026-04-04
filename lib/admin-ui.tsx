@@ -76,10 +76,10 @@ export function PrimaryBtn({ children, onClick, disabled, type = "button", size 
   )
 }
 
-export function GhostBtn({ children, onClick, color }: { children: React.ReactNode; onClick?: () => void; color?: string }) {
+export function GhostBtn({ children, onClick, color, disabled }: { children: React.ReactNode; onClick?: () => void; color?: string; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick}
-      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors hover:bg-black/5"
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed"
       style={{ color: color ?? "var(--admin-text-2)" }}>
       {children}
     </button>

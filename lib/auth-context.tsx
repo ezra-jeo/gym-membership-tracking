@@ -110,6 +110,24 @@ function isBenignLockAbortError(error: unknown): boolean {
   )
 }
 
+async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): Promise<T> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      if (!isBenignLockAbortError(error) || attempt === retries) {
+        throw error
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+    }
+  }
+
+  throw lastError ?? new Error("Unknown lock error")
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -165,8 +183,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (shouldSkipAuthBootstrap || !supabase) {
-      setUser(null)
-      setProfile(null)
+      // Keep any existing auth/profile state when navigating through public routes
+      // (e.g. /gym previews) to avoid teardown/re-hydration races when returning to /admin.
       setIsLoading(false)
       return
     }
@@ -216,7 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const bootstrapUser = async () => {
       try {
-        const { data, error } = await supabase.auth.getUser()
+        const { data, error } = await retryOnBenignLock(() => supabase.auth.getUser(), 1)
 
         if (!isActive || hasResolved) return
 
@@ -282,14 +300,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function fetchProfile(userId: string, client = getClient()): Promise<Profile | null> {
     let built: Profile | null = null
     try {
-      const { data, error } = await withTimeout(
-        client
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle(),
-        PROFILE_FETCH_TIMEOUT_MS,
-        "Profile lookup timed out.",
+      const { data, error } = await retryOnBenignLock(
+        () => withTimeout(
+          client
+            .from("profiles")
+            .select("*")
+            .eq("id", userId)
+            .maybeSingle(),
+          PROFILE_FETCH_TIMEOUT_MS,
+          "Profile lookup timed out.",
+        ),
+        2,
       )
 
       if (error) {

@@ -26,6 +26,7 @@ interface MemberRow {
   name: string
   email: string
   contact_number: string | null
+  profile_status: "active" | "rejected"
   membership_id: string | null
   plan_name: string | null
   start_date: string | null
@@ -67,16 +68,23 @@ export default function MembersPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const fetchMembers = useCallback(async () => {
+    if (!profile?.gymId) {
+      setMembers([])
+      setIsLoading(false)
+      return
+    }
+
     const [{ data: profilesData }, { data: membershipsData }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id, name, email, contact_number, created_at")
+        .select("id, name, email, contact_number, created_at, status")
         .eq("role", "member")
-        .eq("status", "active")
+        .eq("gym_id", profile.gymId)
         .order("name"),
       supabase
         .from("memberships")
         .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
+        .eq("gym_id", profile.gymId)
         .order("created_at", { ascending: false }),
     ])
 
@@ -94,6 +102,7 @@ export default function MembersPage() {
           name: p.name,
           email: p.email,
           contact_number: p.contact_number,
+          profile_status: p.status === "rejected" ? "rejected" : "active",
           membership_id: m?.id ?? null,
           plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
           start_date: m?.start_date ?? null,
@@ -104,7 +113,7 @@ export default function MembersPage() {
       })
     )
     setIsLoading(false)
-  }, [supabase])
+  }, [profile?.gymId, supabase])
 
   useEffect(() => { fetchMembers() }, [fetchMembers])
 
@@ -127,7 +136,8 @@ export default function MembersPage() {
 
   const filtered = useMemo(() => {
     let list = [...members]
-    if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
+    if (statusFilter === "banned") list = list.filter((m) => m.profile_status === "rejected")
+    else if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
     else if (statusFilter !== "all") list = list.filter((m) => m.membership_status === statusFilter)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -147,6 +157,16 @@ export default function MembersPage() {
     const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
     if (error) { toast.error("Failed to update status"); return }
     toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
+    fetchMembers()
+  }
+
+  async function handleProfileStatusChange(memberId: string, status: "active" | "rejected") {
+    const { error } = await supabase.from("profiles").update({ status }).eq("id", memberId)
+    if (error) {
+      toast.error(status === "rejected" ? "Failed to ban member" : "Failed to unban member")
+      return
+    }
+    toast.success(status === "rejected" ? "Member has been banned." : "Member has been unbanned.")
     fetchMembers()
   }
 
@@ -202,7 +222,7 @@ export default function MembersPage() {
     fetchMembers()
   }
 
-  const expiredMembers = members.filter((m) => m.membership_status === "expired")
+  const expiredMembers = members.filter((m) => m.profile_status !== "rejected" && m.membership_status === "expired")
 
   if (isLoading) {
     return <LoadingSkeleton rows={6} h={68} />
@@ -212,7 +232,7 @@ export default function MembersPage() {
     <div className="space-y-6" style={{ backgroundColor: A.bg }}>
       <PageHeader
         title="Members"
-        subtitle={`${members.length} active member${members.length !== 1 ? "s" : ""}`}
+        subtitle={`${members.length} member account${members.length !== 1 ? "s" : ""}`}
       />
 
       {expiredMembers.length > 0 && (
@@ -247,6 +267,7 @@ export default function MembersPage() {
           <option value="active">Active Plan</option>
           <option value="expired">Expired</option>
           <option value="frozen">Frozen</option>
+          <option value="banned">Banned</option>
           <option value="no_plan">No Plan</option>
         </select>
       </div>
@@ -278,6 +299,14 @@ export default function MembersPage() {
                       >
                         {m.name}
                       </button>
+                      {m.profile_status === "rejected" && (
+                        <span
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                          style={{ backgroundColor: "var(--admin-expired-bg)", color: "var(--admin-expired-text)", border: "1px solid var(--admin-expired-border)" }}
+                        >
+                          Banned
+                        </span>
+                      )}
                       <StatusPill status={m.membership_status} />
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: A.muted }}>
@@ -289,19 +318,28 @@ export default function MembersPage() {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0 ml-3">
-                  <GhostBtn onClick={() => openRenewDialog(m)} color={A.primary}>
+                  <GhostBtn onClick={() => openRenewDialog(m)} color={A.primary} disabled={m.profile_status === "rejected"}>
                     Renew
                   </GhostBtn>
-                  {m.membership_id && m.membership_status === "active" && (
+                  {m.membership_id && m.membership_status === "active" && m.profile_status !== "rejected" && (
                     <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "frozen")} color="var(--admin-frozen-text)">
                       <Snowflake className="h-3 w-3" />
                       Freeze
                     </GhostBtn>
                   )}
-                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && (
+                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && m.profile_status !== "rejected" && (
                     <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "active")} color="var(--admin-active-text)">
                       <Play className="h-3 w-3" />
                       Activate
+                    </GhostBtn>
+                  )}
+                  {m.profile_status === "rejected" ? (
+                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "active")} color="var(--admin-active-text)">
+                      Unban
+                    </GhostBtn>
+                  ) : (
+                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "rejected")} color="var(--admin-expired-text)">
+                      Ban
                     </GhostBtn>
                   )}
                 </div>

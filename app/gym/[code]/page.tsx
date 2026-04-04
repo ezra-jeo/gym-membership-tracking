@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MapPin, Phone, Facebook, Instagram, Globe } from 'lucide-react';
 import { getGymAssetPublicUrl, getGymPublicByCode } from '@/lib/gym-public';
+import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { canPreviewUnpublishedGym } from '@/lib/gym-visibility';
 import type { Json } from '@/lib/database.types';
 
 export const revalidate = 86400;
@@ -65,11 +67,15 @@ export default async function GymPage({ params }: PageProps) {
     social_links: toSocialLinks(data.social_links),
   };
 
+  let canManagementPreview = false;
   if (!gym.is_published) {
-    return <ComingSoonPage gym={gym} />;
+    canManagementPreview = await canCurrentUserPreviewUnpublishedGym(gym.id);
+    if (!canManagementPreview) {
+      return <ComingSoonPage gym={gym} />;
+    }
   }
 
-  return <GymLandingPage gym={gym} />;
+  return <GymLandingPage gym={gym} isManagementPreview={!gym.is_published && canManagementPreview} />;
 }
 
 function ComingSoonPage({ gym }: { gym: GymData }) {
@@ -103,7 +109,7 @@ function ComingSoonPage({ gym }: { gym: GymData }) {
   );
 }
 
-function GymLandingPage({ gym }: { gym: GymData }) {
+function GymLandingPage({ gym, isManagementPreview }: { gym: GymData; isManagementPreview?: boolean }) {
   const hasAmenities = !!gym.amenities && gym.amenities.length > 0;
   const hasSocial = !!gym.social_links && (!!gym.social_links.facebook || !!gym.social_links.instagram || !!gym.social_links.website);
   const hasContact = !!gym.address || !!gym.phone;
@@ -111,6 +117,11 @@ function GymLandingPage({ gym }: { gym: GymData }) {
 
   return (
     <>
+      {isManagementPreview && (
+        <div className="sticky top-0 z-50 border-b px-4 py-2 text-center text-sm font-semibold" style={{ backgroundColor: 'var(--color-warning-bg)', borderColor: 'var(--color-warning)', color: 'var(--color-text-primary)' }}>
+          Admin preview mode: this gym page is currently unpublished for public visitors.
+        </div>
+      )}
       <div className="relative flex flex-col min-h-screen md:hidden overflow-hidden">
         {gym.cover_url ? (
           <>
@@ -542,6 +553,27 @@ function GymLandingPage({ gym }: { gym: GymData }) {
       </div>
     </>
   );
+}
+
+async function canCurrentUserPreviewUnpublishedGym(gymId: string): Promise<boolean> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) return false;
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, gym_id')
+      .eq('id', userData.user.id)
+      .maybeSingle();
+
+    return canPreviewUnpublishedGym(gymId, {
+      role: profile?.role,
+      gymId: profile?.gym_id,
+    });
+  } catch {
+    return false;
+  }
 }
 
 function toOperatingHours(value: Json | null): Record<string, string> | null {

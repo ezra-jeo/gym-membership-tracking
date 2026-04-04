@@ -17,7 +17,6 @@ import {
   Menu,
   X,
   Megaphone,
-  UserPlus,
   Monitor,
   PackageOpen,
   Tag,
@@ -35,7 +34,6 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: '/admin',                 label: 'Dashboard',     icon: LayoutDashboard },
   { href: '/admin/members',         label: 'Members',       icon: Users },
-  { href: '/admin/members/pending', label: 'Pending',       icon: UserPlus },
   { href: '/admin/payments',        label: 'Payments',      icon: CreditCard },
   { href: '/admin/plans',           label: 'Plans',         icon: PackageOpen },
   { href: '/admin/promos',          label: 'Promos',        icon: Tag },
@@ -61,6 +59,7 @@ export default function AdminLayout({
   const [attemptedProfileRecovery, setAttemptedProfileRecovery] = useState(false);
   const [isRecoveringProfile, setIsRecoveringProfile] = useState(false);
   const [authTimeoutExceeded, setAuthTimeoutExceeded] = useState(false);
+  const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
 
   useEffect(() => {
     if (isLoading || isRecoveringProfile) return;
@@ -70,9 +69,6 @@ export default function AdminLayout({
     }
 
     if (!profile) {
-      if (attemptedProfileRecovery) {
-        router.replace('/login');
-      }
       return;
     }
 
@@ -82,10 +78,11 @@ export default function AdminLayout({
   }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, profile, router, user]);
 
   useEffect(() => {
-    if (isLoading || !user || profile || attemptedProfileRecovery) return;
+    if (isLoading || !user || profile || profileRecoveryAttempts >= 3) return;
 
     let active = true;
     setAttemptedProfileRecovery(true);
+    setProfileRecoveryAttempts((prev) => prev + 1);
     setIsRecoveringProfile(true);
 
     void refreshProfile().finally(() => {
@@ -96,7 +93,7 @@ export default function AdminLayout({
     return () => {
       active = false;
     };
-  }, [attemptedProfileRecovery, isLoading, profile, refreshProfile, user]);
+  }, [isLoading, profile, profileRecoveryAttempts, refreshProfile, user]);
 
   useEffect(() => {
     if (!isLoading && !isRecoveringProfile) {
@@ -115,8 +112,8 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (!authTimeoutExceeded) return;
-    router.replace('/login');
-  }, [authTimeoutExceeded, router]);
+    if (!user) router.replace('/login');
+  }, [authTimeoutExceeded, router, user]);
 
   // Fetch gym name once profile (and gymId) is available
   useEffect(() => {
@@ -145,14 +142,48 @@ export default function AdminLayout({
     setIsOpen(false);
   }, [pathname]);
 
-  if (isLoading || isRecoveringProfile || authTimeoutExceeded) return <LoadingScreen />;
-
-  if (!user || !profile) return <LoadingScreen />;
-
   const handleLogout = async () => {
     if (isSigningOut) return;
     await signOut();
   };
+
+  if (isLoading || isRecoveringProfile || authTimeoutExceeded) return <LoadingScreen />;
+
+  if (!user) return <LoadingScreen />;
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: 'var(--color-background)' }}>
+        <div className="max-w-md w-full rounded-xl border p-5 space-y-3" style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}>
+          <p className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>Loading your admin profile is taking longer than expected.</p>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            This can happen during temporary auth lock contention. You can retry or sign out and sign back in.
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setProfileRecoveryAttempts(0);
+                setAttemptedProfileRecovery(false);
+              }}
+              className="rounded-md px-3 py-2 text-sm font-medium"
+              style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-md px-3 py-2 text-sm font-medium"
+              style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-white)' }}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const displayName = gymName ?? 'Stren';
   const displayInitial = displayName.charAt(0).toUpperCase();

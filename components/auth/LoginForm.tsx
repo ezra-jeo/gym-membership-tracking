@@ -113,12 +113,6 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         return;
       }
 
-      if (profile?.status === 'pending') {
-        setError('Your account is awaiting gym approval.');
-        await signOut();
-        return;
-      }
-
       if (profile?.status === 'rejected') {
         setError('Your membership request was not approved. Contact the gym for details.');
         await signOut();

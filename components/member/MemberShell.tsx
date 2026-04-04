@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { LoadingScreen } from '@/components/ui/loading-screen';
+import { MemberNotificationsPanel } from '@/components/member-notifications-panel';
 import { Home, Activity, Trophy, User, Settings } from 'lucide-react';
 import type { GymBranding } from '@/lib/gym-member';
 
@@ -123,6 +124,7 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
             <User size={18} />
             {profile?.name ?? 'Profile'}
           </Link>
+          <MemberNotificationsPanel />
         </div>
       </header>
 
@@ -155,14 +157,17 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
           </span>
         </Link>
 
-        <Link href="/member/profile">
-          <div
-            className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold"
-            style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
-          >
-            {profile?.name?.charAt(0)?.toUpperCase() ?? '?'}
-          </div>
-        </Link>
+        <div className="flex items-center gap-2">
+          <MemberNotificationsPanel />
+          <Link href="/member/profile">
+            <div
+              className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold"
+              style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
+            >
+              {profile?.name?.charAt(0)?.toUpperCase() ?? '?'}
+            </div>
+          </Link>
+        </div>
       </header>
 
       <main className="flex-1 pb-20 md:pb-6">
