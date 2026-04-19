@@ -121,7 +121,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
 
       if (gymCode && profile?.role !== 'member') {
         setError('Gym management accounts must sign in from the Stren login page.');
-        router.replace('/admin');
+        await signOut();
         return;
       }
 

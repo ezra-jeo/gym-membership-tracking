@@ -55,11 +55,20 @@ function getStoredLoginOriginPath(): string | null {
   return null
 }
 
+function resolveLoginOriginPath(pathname?: string | null): string {
+  const storedPath = getStoredLoginOriginPath()
+  if (storedPath) return storedPath
+
+  if (pathname?.startsWith("/member")) return "/gym-select"
+
+  return "/login"
+}
+
 async function getMemberSignOutRedirectPath(
   client: ReturnType<typeof createClient>,
   gymId: string | null | undefined,
 ): Promise<string> {
-  if (!gymId) return "/login"
+  if (!gymId) return "/gym-select"
 
   const { data } = await client
     .from("gyms")
@@ -68,7 +77,7 @@ async function getMemberSignOutRedirectPath(
     .maybeSingle()
 
   const gymCode = data?.code
-  if (!gymCode) return "/login"
+  if (!gymCode) return "/gym-select"
 
   return `/gym/${encodeURIComponent(gymCode)}/login`
 }
@@ -176,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const isAuthRoute = pathname === "/login" || pathname === "/signup" || pathname?.startsWith("/signup/")
     if (!isAuthRoute) {
-      router.replace("/login")
+      router.replace(resolveLoginOriginPath(pathname))
       router.refresh()
     }
   }, [pathname, router, supabase])
