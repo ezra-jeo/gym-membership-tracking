@@ -202,7 +202,7 @@ function GymLandingPage({ gym, isManagementPreview }: { gym: GymData; isManageme
               Create Account
             </button>
           </Link>
-          <Link href={`/gym/${encodeURIComponent(gym.code)}/login`} className="block">
+          <Link href={`/gym/${encodeURIComponent(gym.code)}/login?from=landing`} className="block">
             <button
               className="w-full py-4 rounded-xl border text-base font-semibold uppercase tracking-[0.14em]"
               style={{
@@ -278,7 +278,7 @@ function GymLandingPage({ gym, isManagementPreview }: { gym: GymData; isManageme
                       Join {gym.name}
                     </button>
                   </Link>
-                  <Link href={`/gym/${encodeURIComponent(gym.code)}/login`}>
+                  <Link href={`/gym/${encodeURIComponent(gym.code)}/login?from=landing`}>
                     <button
                       className="w-full max-w-[90vw] truncate rounded-xl border px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
                       style={{ borderColor: 'rgba(255,255,255,0.45)', color: 'var(--color-white)', backgroundColor: 'rgba(0,0,0,0.22)' }}

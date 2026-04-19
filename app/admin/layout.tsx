@@ -62,6 +62,8 @@ export default function AdminLayout({
   const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
 
   useEffect(() => {
+    if (isSigningOut) return;
+
     if (isLoading || isRecoveringProfile) return;
     if (!user) {
       router.replace('/login');
@@ -75,7 +77,7 @@ export default function AdminLayout({
     if (!['owner', 'admin', 'staff'].includes(profile.role)) {
       router.replace('/member');
     }
-  }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, profile, router, user]);
+  }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, isSigningOut, profile, router, user]);
 
   useEffect(() => {
     if (isLoading || !user || profile || profileRecoveryAttempts >= 3) return;
@@ -111,9 +113,11 @@ export default function AdminLayout({
   }, [isLoading, isRecoveringProfile]);
 
   useEffect(() => {
+    if (isSigningOut) return;
+
     if (!authTimeoutExceeded) return;
     if (!user) router.replace('/login');
-  }, [authTimeoutExceeded, router, user]);
+  }, [authTimeoutExceeded, isSigningOut, router, user]);
 
   // Fetch gym name once profile (and gymId) is available
   useEffect(() => {
