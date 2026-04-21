@@ -31,7 +31,7 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
   const { user, profile, isLoading } = useAuth();
   const [authTimeoutExceeded, setAuthTimeoutExceeded] = React.useState(false);
   const gymCode = gymBranding?.code ?? null;
-  const gymLoginHref = gymCode ? `/gym/${encodeURIComponent(gymCode)}/login` : '/login';
+  const gymLoginHref = gymCode ? `/gym/${encodeURIComponent(gymCode)}/login` : '/gym-select';
 
   useEffect(() => {
     if (!isLoading && !user && !hasServerUser) {

@@ -123,11 +123,11 @@ export function NotificationsPanel() {
       {open && (
         <>
           <div
-            className="fixed inset-0 z-40"
+            className="fixed inset-0 z-110"
             style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
             onClick={() => setOpen(false)}
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-120 flex items-center justify-center p-4">
           <div
             className="w-[calc(100vw-2rem)] max-w-sm rounded-2xl shadow-xl overflow-hidden"
             style={{ backgroundColor: '#ffffff', border: '1px solid var(--admin-border)' }}

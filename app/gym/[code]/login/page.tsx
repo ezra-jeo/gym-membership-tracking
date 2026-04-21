@@ -8,11 +8,16 @@ export const revalidate = 86400;
 
 type PageProps = {
   params: Promise<{ code: string }> | { code: string };
+  searchParams?: Promise<{ from?: string }> | { from?: string };
 };
 
-export default async function GymLoginPage({ params }: PageProps) {
+export default async function GymLoginPage({ params, searchParams }: PageProps) {
   const { code: rawCode } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const { code, data: gym } = await getGymPublicByCode(rawCode);
+  const source = resolvedSearchParams?.from;
+  const backHref = source === 'select' ? '/gym-select' : `/gym/${encodeURIComponent(code)}`;
+  const backLabel = source === 'select' ? 'Back to gym select' : 'Back to gym page';
 
   if (!gym || !gym.is_published) {
     notFound();
@@ -38,15 +43,15 @@ export default async function GymLoginPage({ params }: PageProps) {
         <div className="relative z-10">
         <div className="mb-4 md:mb-2">
           <Link
-            href={`/gym/${encodeURIComponent(code)}`}
+            href={backHref}
             className="inline-flex items-center gap-1 text-xs font-medium"
             style={{ color: 'rgba(255,255,255,0.85)' }}
           >
-            &larr; Back to gym page
+            &larr; {backLabel}
           </Link>
         </div>
         <div className="flex justify-center pt-14 md:pt-0 mb-10 md:mb-8">
-          <Link href={`/gym/${encodeURIComponent(code)}`}>
+          <Link href={backHref}>
             <div
               className="h-20 w-20 rounded-full overflow-hidden border-2 cursor-pointer hover:opacity-80 transition-opacity"
               style={{ borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'var(--color-white)' }}
@@ -61,7 +66,7 @@ export default async function GymLoginPage({ params }: PageProps) {
         </div>
 
         <div
-          className="p-0 md:p-8 rounded-none md:rounded-2xl border-0 md:border shadow-none md:shadow-2xl"
+          className="p-5 md:p-8 rounded-2xl border shadow-2xl"
           style={{
             backgroundColor: 'rgba(255,255,255,0.96)',
             borderColor: 'rgba(255,255,255,0.45)',
@@ -73,7 +78,7 @@ export default async function GymLoginPage({ params }: PageProps) {
               className="text-[11px] font-semibold uppercase tracking-[0.25em]"
               style={{ color: 'var(--color-secondary)' }}
             >
-              Member Access
+              Gym Access
             </p>
             <h1
               className="text-4xl font-bold mb-2"

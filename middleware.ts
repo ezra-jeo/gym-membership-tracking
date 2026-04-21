@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+const LOGIN_ORIGIN_COOKIE_KEY = "stren.auth.loginOriginPath"
+const GYM_LOGIN_PATH_REGEX = /^\/gym\/[^/]+\/login$/
+
 function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
   // In App Router client-side navigations, document-level policies may persist from
   // the initial page load. Keep camera available to same-origin so /kiosk can start
@@ -51,6 +54,46 @@ function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) 
   })
 }
 
+function getStoredLoginOriginPath(request: NextRequest): string | null {
+  const candidate = request.cookies.get(LOGIN_ORIGIN_COOKIE_KEY)?.value
+  if (!candidate) return null
+
+  if (candidate === "/login") return candidate
+  if (GYM_LOGIN_PATH_REGEX.test(candidate)) return candidate
+
+  return null
+}
+
+function resolveLoginPath(request: NextRequest, pathname: string): string {
+  const storedOriginPath = getStoredLoginOriginPath(request)
+  if (storedOriginPath) return storedOriginPath
+
+  if (pathname.startsWith("/member")) return "/gym-select"
+
+  return "/login"
+}
+
+function withLoginOriginCookie(response: NextResponse, pathname: string): NextResponse {
+  if (pathname === "/login") {
+    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, "/login", {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
+    })
+    return response
+  }
+
+  if (GYM_LOGIN_PATH_REGEX.test(pathname)) {
+    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, pathname, {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
+    })
+  }
+
+  return response
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -80,9 +123,11 @@ export async function middleware(request: NextRequest) {
   const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
   const isAuthRoute = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/signup/")
 
+  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathname), pathname)
+
   // Public pages should not pay auth/profile lookup cost.
   if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute) {
-    return addSecurityHeaders(supabaseResponse, pathname)
+    return finalize(supabaseResponse)
   }
 
   if (isAuthRoute) {
@@ -93,12 +138,12 @@ export async function middleware(request: NextRequest) {
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
         clearSupabaseAuthCookies(request, supabaseResponse)
-        return addSecurityHeaders(supabaseResponse, pathname)
+        return finalize(supabaseResponse)
       }
       throw error
     }
 
-    if (!user) return addSecurityHeaders(supabaseResponse, pathname)
+    if (!user) return finalize(supabaseResponse)
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -107,11 +152,11 @@ export async function middleware(request: NextRequest) {
       .maybeSingle()
 
     if (!profile || profile.status === "rejected") {
-      return addSecurityHeaders(supabaseResponse, pathname)
+      return finalize(supabaseResponse)
     }
 
     const redirectTo = profile.role === "member" ? "/member" : "/admin"
-    return addSecurityHeaders(NextResponse.redirect(new URL(redirectTo, request.url)), pathname)
+    return finalize(NextResponse.redirect(new URL(redirectTo, request.url)))
   }
 
   let user = null
@@ -121,10 +166,10 @@ export async function middleware(request: NextRequest) {
   } catch (error) {
     if (isInvalidRefreshTokenError(error)) {
       const url = request.nextUrl.clone()
-      url.pathname = "/login"
+      url.pathname = resolveLoginPath(request, pathname)
       const redirect = NextResponse.redirect(url)
       clearSupabaseAuthCookies(request, redirect)
-      return addSecurityHeaders(redirect, pathname)
+      return finalize(redirect)
     }
     throw error
   }
@@ -132,8 +177,8 @@ export async function middleware(request: NextRequest) {
   // All other routes require auth
   if (!user) {
     const url = request.nextUrl.clone()
-    url.pathname = "/login"
-    return addSecurityHeaders(NextResponse.redirect(url), pathname)
+    url.pathname = resolveLoginPath(request, pathname)
+    return finalize(NextResponse.redirect(url))
   }
 
   // Role-based access control
@@ -146,25 +191,25 @@ export async function middleware(request: NextRequest) {
 
   // No profile yet (trigger delay) or rejected — send to login
   if (!profile || profile.status === "rejected") {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/login", request.url)), pathname)
+    return finalize(NextResponse.redirect(new URL(resolveLoginPath(request, pathname), request.url)))
   }
 
   // Admin routes — only admin/staff/owner
   if (pathname.startsWith("/admin")) {
     if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
-      return addSecurityHeaders(NextResponse.redirect(new URL("/member", request.url)), pathname)
+      return finalize(NextResponse.redirect(new URL("/member", request.url)))
     }
   }
 
   // Redirect stale /dashboard URLs to /admin
   if (pathname.startsWith("/dashboard")) {
-    return addSecurityHeaders(NextResponse.redirect(new URL("/admin", request.url)), pathname)
+    return finalize(NextResponse.redirect(new URL("/admin", request.url)))
   }
 
   if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
   supabaseResponse.headers.set("x-user-role", profile.role)
 
-  return addSecurityHeaders(supabaseResponse, pathname)
+  return finalize(supabaseResponse)
 }
 
 export const config = {

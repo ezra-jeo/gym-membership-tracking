@@ -10,9 +10,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@/lib/validations';
 import type { z } from 'zod';
 
-const PROFILE_RETRY_ATTEMPTS = 3;
-const PROFILE_RETRY_DELAY_MS = 180;
-
 function getRoleHome(role: string): string {
   switch (role) {
     case 'owner':
@@ -64,42 +61,11 @@ export function LoginForm({ gymCode }: LoginFormProps) {
     return data?.id ?? null;
   };
 
-  const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  const getProfileWithRetry = async (userId: string) => {
-    for (let attempt = 0; attempt < PROFILE_RETRY_ATTEMPTS; attempt += 1) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('role, status, gym_id')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (data) return data;
-      if (attempt < PROFILE_RETRY_ATTEMPTS - 1) {
-        await delay(PROFILE_RETRY_DELAY_MS * (attempt + 1));
-      }
-    }
-
-    return null;
-  };
-
   const onSubmit = async (data: LoginFormData) => {
     setError('');
     setIsLoading(true);
     try {
       const { email, password } = data;
-
-      // Keep gym login visible, but prevent active management sessions from switching accounts here.
-      if (gymCode) {
-        const { data: existingSession } = await supabase.auth.getUser();
-        if (existingSession.user && existingSession.user.email && existingSession.user.email !== email) {
-          const existingProfile = await getProfileWithRetry(existingSession.user.id);
-          if (existingProfile?.role && existingProfile.role !== 'member') {
-            setError('You are already signed in as a gym management account. Sign out first before signing in as a member.');
-            return;
-          }
-        }
-      }
 
       const { error: authError, user, profile } = await signIn(email, password);
 
@@ -119,16 +85,16 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         return;
       }
 
-      if (gymCode && profile?.role !== 'member') {
-        setError('Gym management accounts must sign in from the Stren login page.');
-        router.replace('/admin');
-        return;
-      }
-
       if (gymCode) {
         const targetGymId = await resolveGymIdByCode(gymCode);
-        if (!targetGymId || profile?.gymId !== targetGymId) {
-          setError('This account is not registered to this gym');
+        if (!targetGymId) {
+          setError('Unable to verify gym. Please try again.');
+          await signOut();
+          return;
+        }
+
+        if (profile?.gymId !== targetGymId) {
+          setError('This account is not part of this gym.');
           await signOut();
           return;
         }

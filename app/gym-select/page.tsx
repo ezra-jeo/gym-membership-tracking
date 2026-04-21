@@ -102,10 +102,11 @@ export default function GymSelectPage() {
     setSearchMode(false);
     setQuery('');
     setResults([]);
+    router.push(`/gym/${encodeURIComponent(toSave.code)}/login?from=select`);
   };
 
   const handleContinueToGym = (gym: SavedGym) => {
-    router.push(`/gym/${encodeURIComponent(gym.code)}`);
+    router.push(`/gym/${encodeURIComponent(gym.code)}/login?from=select`);
   };
 
   const handleEnterSearchMode = () => setSearchMode(true);
@@ -360,26 +361,6 @@ export default function GymSelectPage() {
                   </div>
                 )}
               </div>
-
-              {/* Divider - visible on both mobile and desktop */}
-              {!searchMode && (
-                <div 
-                  className="my-4 h-px"
-                  style={{ backgroundColor: 'var(--color-surface)' }}
-                />
-              )}
-
-              {!searchMode && (
-                <div className="mb-4">
-                  <Link
-                    href="/login"
-                    className="block w-full rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors hover:bg-black/5"
-                    style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
-                  >
-                    Gym admin sign in
-                  </Link>
-                </div>
-              )}
 
               {/* Footer Links */}
               {!searchMode && (
