@@ -417,6 +417,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null)
       setIsLoading(false)
       setIsSigningOut(false)
+      try {
+        window.localStorage.removeItem(LOGIN_ORIGIN_STORAGE_KEY)
+      } catch {
+        // Storage can be unavailable in private/locked-down browser contexts.
+      }
       router.replace(targetLoginPath)
       router.refresh()
       window.setTimeout(() => {

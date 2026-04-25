@@ -8,11 +8,24 @@ export const revalidate = 86400;
 
 type PageProps = {
   params: Promise<{ code: string }> | { code: string };
+  searchParams?: Promise<{ from?: string }> | { from?: string };
 };
 
-export default async function GymSignUpPage({ params }: PageProps) {
+export default async function GymSignUpPage({ params, searchParams }: PageProps) {
   const { code: rawCode } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const { code, data: gym } = await getGymPublicByCode(rawCode);
+  const source = resolvedSearchParams?.from;
+  const backHref = source === 'login'
+    ? `/gym/${encodeURIComponent(code)}/login`
+    : source === 'select'
+      ? '/gym-select'
+      : `/gym/${encodeURIComponent(code)}`;
+  const backLabel = source === 'login'
+    ? 'Back to login'
+    : source === 'select'
+      ? 'Back to gym select'
+      : `Back to ${gym?.name ?? 'gym page'}`;
 
   if (!gym || !gym.is_published) notFound();
 
@@ -43,7 +56,7 @@ export default async function GymSignUpPage({ params }: PageProps) {
 
         <div className="relative z-10 flex flex-col justify-end h-full p-6 md:p-12">
           {gym.logo_url && (
-            <div className="mb-4 h-14 w-14 md:h-20 md:w-20 overflow-hidden rounded-full border-2 border-white/80">
+            <Link href={`/gym/${encodeURIComponent(code)}`} className="mb-4 h-14 w-14 md:h-20 md:w-20 overflow-hidden rounded-full border-2 border-white/80 block hover:opacity-80 transition-opacity">
               <Image
                 src={gym.logo_url}
                 alt={`${gym.name} logo`}
@@ -51,7 +64,7 @@ export default async function GymSignUpPage({ params }: PageProps) {
                 height={80}
                 className="h-full w-full object-cover"
               />
-            </div>
+            </Link>
           )}
           <h1
             className="text-3xl md:text-5xl font-bold leading-tight text-white"
@@ -78,21 +91,13 @@ export default async function GymSignUpPage({ params }: PageProps) {
         style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94))' }}
       >
         <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center justify-between gap-3">
+          <div className="mb-8">
             <Link
-              href="/landing"
+              href={backHref}
               className="inline-flex items-center gap-1 text-xs"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              &larr; Back to Stren
-            </Link>
-
-            <Link
-              href={`/gym/${encodeURIComponent(code)}`}
-              className="inline-flex items-center gap-1 text-xs"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              Back to {gym.name}
+              &larr; {backLabel}
             </Link>
           </div>
 
@@ -116,9 +121,13 @@ export default async function GymSignUpPage({ params }: PageProps) {
 
           <div className="md:hidden flex justify-center mb-6">
             {gym.logo_url ? (
-              <Image src={gym.logo_url} alt={`${gym.name} logo`} width={64} height={64} className="rounded-full object-cover" />
+              <Link href={`/gym/${encodeURIComponent(code)}`} className="rounded-full overflow-hidden block hover:opacity-80 transition-opacity">
+                <Image src={gym.logo_url} alt={`${gym.name} logo`} width={64} height={64} className="rounded-full object-cover" />
+              </Link>
             ) : (
-              <Image src="/stren-logo.png" alt="Stren Logo" width={64} height={64} className="object-contain" />
+              <Link href={`/gym/${encodeURIComponent(code)}`} className="block hover:opacity-80 transition-opacity">
+                <Image src="/stren-logo.png" alt="Stren Logo" width={64} height={64} className="object-contain" />
+              </Link>
             )}
           </div>
 

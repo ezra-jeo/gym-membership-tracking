@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 
-// Kiosk signup removed — members sign up via /signup/member
+// Kiosk signup removed — members sign up via gym-specific signup flow.
 export default function KioskSignupPage() {
-  redirect("/signup/member")
+  redirect("/gym-select")
 }

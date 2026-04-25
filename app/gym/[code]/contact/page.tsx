@@ -163,7 +163,7 @@ export default async function ContactPage({ params }: PageProps) {
         <div className="mx-auto max-w-5xl px-6 py-16 text-center md:px-16 md:py-20">
           <h2 className="text-2xl font-bold text-white sm:text-3xl">Ready to join?</h2>
           <div className="mt-6">
-            <Link href={`/signup/member?gym=${encodeURIComponent(code)}`}>
+            <Link href={`/gym/${encodeURIComponent(code)}/signup`}>
               <button
                 className="rounded-full px-8 py-3 text-sm font-semibold"
                 style={{ backgroundColor: 'var(--color-white)', color: 'var(--color-primary)' }}

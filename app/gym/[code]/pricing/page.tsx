@@ -87,7 +87,7 @@ export default async function PricingPage({ params }: PageProps) {
                     )}
 
                     <div className="mt-8">
-                      <Link href={`/signup/member?gym=${encodeURIComponent(code)}`}>
+                      <Link href={`/gym/${encodeURIComponent(code)}/signup`}>
                         <button
                           className="w-full rounded-full py-3 text-sm font-semibold transition-opacity hover:opacity-90"
                           style={

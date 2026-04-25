@@ -51,7 +51,7 @@ export default async function GymLoginPage({ params, searchParams }: PageProps) 
           </Link>
         </div>
         <div className="flex justify-center pt-14 md:pt-0 mb-10 md:mb-8">
-          <Link href={backHref}>
+          <Link href={`/gym/${encodeURIComponent(code)}`}>
             <div
               className="h-20 w-20 rounded-full overflow-hidden border-2 cursor-pointer hover:opacity-80 transition-opacity"
               style={{ borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'var(--color-white)' }}

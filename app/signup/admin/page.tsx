@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { CheckCircle2, ArrowLeft } from 'lucide-react';
@@ -20,6 +20,13 @@ export default function AdminSignUpPage() {
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [gymCode, setGymCode] = useState('');
+  const [source, setSource] = useState<string | null>(null);
+  const backHref = source === 'landing' ? '/landing' : '/signup';
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    setSource(urlParams.get('from'));
+  }, []);
 
   const {
     register,
@@ -109,7 +116,7 @@ export default function AdminSignUpPage() {
         </div>
 
         <div className="p-8 rounded-lg border shadow-md" style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)', borderWidth: '1px' }}>
-          <Link href="/signup" className="inline-flex items-center gap-1 mb-6 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <Link href={backHref} className="inline-flex items-center gap-1 mb-6 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Link>
 

@@ -35,10 +35,20 @@ export default function GymSelectPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [isSignupIntent, setIsSignupIntent] = useState(false);
+
+  const getGymDestination = (gymCode: string) => {
+    if (isSignupIntent) {
+      return `/gym/${encodeURIComponent(gymCode)}/signup`;
+    }
+    return `/gym/${encodeURIComponent(gymCode)}/login?from=select`;
+  };
 
   // Load remembered gym from localStorage on mount
   useEffect(() => {
     setMounted(true);
+    const urlParams = new URLSearchParams(window.location.search);
+    setIsSignupIntent(urlParams.get('intent') === 'signup');
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -102,11 +112,11 @@ export default function GymSelectPage() {
     setSearchMode(false);
     setQuery('');
     setResults([]);
-    router.push(`/gym/${encodeURIComponent(toSave.code)}/login?from=select`);
+    router.push(getGymDestination(toSave.code));
   };
 
   const handleContinueToGym = (gym: SavedGym) => {
-    router.push(`/gym/${encodeURIComponent(gym.code)}/login?from=select`);
+    router.push(getGymDestination(gym.code));
   };
 
   const handleEnterSearchMode = () => setSearchMode(true);
