@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
+import type { Database } from '@/lib/database.types';
 import { useRouter } from 'next/navigation';
 import {
   ChevronRight,
@@ -23,6 +24,8 @@ interface NotificationPreferences {
   inactivity_nudges_enabled: boolean;
   streak_notifications_enabled: boolean;
 }
+
+type MemberNotificationPreferencesInsert = Database['public']['Tables']['member_notification_preferences']['Insert'];
 
 function SettingsRow({
   icon,
@@ -195,16 +198,23 @@ export default function SettingsPage() {
     // Optimistic update
     setNotifPrefs(prev => ({ ...prev, [key]: newValue }));
     setSavingPrefs(true);
+
+    const payload: MemberNotificationPreferencesInsert = {
+      member_id: profile.id,
+      gym_id: profile.gymId,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (key === 'inactivity_nudges_enabled') {
+      payload.inactivity_nudges_enabled = newValue;
+    } else {
+      payload.streak_notifications_enabled = newValue;
+    }
     
     // Upsert preference
     const { error } = await supabase
       .from('member_notification_preferences')
-      .upsert({
-        member_id: profile.id,
-        gym_id: profile.gymId,
-        [key]: newValue,
-        updated_at: new Date().toISOString(),
-      }, {
+      .upsert(payload, {
         onConflict: 'member_id',
       });
     
