@@ -1,0 +1,249 @@
+/**
+ * lib/email.ts
+ *
+ * Onboarding email sender using Resend.
+ * Generates a QR code PNG (base64) server-side and embeds it inline —
+ * no external image hosting required.
+ *
+ * Requires:
+ *   RESEND_API_KEY       — from resend.com dashboard
+ *   RESEND_FROM_EMAIL    — verified sender address, e.g. "Stren <noreply@yourgym.com>"
+ *
+ * The `qrcode` package is already in package.json so no new install is needed for that.
+ * Only Resend needs to be added:
+ *   npm install resend
+ */
+
+import QRCode from "qrcode"
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface OnboardingEmailPayload {
+  to: string
+  memberName: string
+  gymName: string
+  qrPayload: string   // the raw stren://checkin/... string encoded into the QR
+  magicLink: string   // one-time login URL from Supabase
+}
+
+export type SendResult = {
+  ok: true
+  messageId: string
+} | {
+  ok: false
+  error: string
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function getResendKey(): string {
+  const key = process.env.RESEND_API_KEY?.trim()
+  if (!key) throw new Error("RESEND_API_KEY is not set.")
+  return key
+}
+
+function getFromAddress(): string {
+  return (
+    process.env.RESEND_FROM_EMAIL?.trim() ??
+    "Stren <noreply@mail.stren.app>"
+  )
+}
+
+/** Renders the QR payload to a base64 PNG data-URI (for inline embedding). */
+async function generateQrDataUri(payload: string): Promise<string> {
+  return QRCode.toDataURL(payload, {
+    width: 240,
+    margin: 2,
+    color: { dark: "#1a1a1a", light: "#ffffff" },
+    errorCorrectionLevel: "M",
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Email HTML template
+// ---------------------------------------------------------------------------
+
+function buildEmailHtml(params: {
+  memberName: string
+  gymName: string
+  qrDataUri: string
+  magicLink: string
+}): string {
+  const { memberName, gymName, qrDataUri, magicLink } = params
+
+  return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to ${gymName}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:system-ui,-apple-system,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e4e4e7;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#18181b;padding:28px 32px;">
+              <p style="margin:0;font-size:22px;font-weight:600;color:#ffffff;letter-spacing:-0.3px;">
+                ${gymName}
+              </p>
+              <p style="margin:6px 0 0;font-size:13px;color:#a1a1aa;">
+                Membership confirmation
+              </p>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+              <p style="margin:0 0 8px;font-size:20px;font-weight:600;color:#18181b;">
+                Welcome, ${memberName}!
+              </p>
+              <p style="margin:0 0 24px;font-size:15px;color:#52525b;line-height:1.6;">
+                Your membership at <strong>${gymName}</strong> is active.
+                Your QR code is ready — use it to check in at the gym kiosk
+                without needing to open an app.
+              </p>
+
+              <!-- QR code -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:0 0 24px;">
+                    <div style="display:inline-block;background:#ffffff;border:1px solid #e4e4e7;border-radius:10px;padding:16px;">
+                      <img
+                        src="${qrDataUri}"
+                        alt="Your gym check-in QR code"
+                        width="200"
+                        height="200"
+                        style="display:block;border:0;"
+                      />
+                    </div>
+                    <p style="margin:10px 0 0;font-size:12px;color:#a1a1aa;">
+                      Scan this at the gym entrance
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Divider -->
+              <hr style="border:none;border-top:1px solid #e4e4e7;margin:0 0 24px;" />
+
+              <!-- Magic link section -->
+              <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#18181b;">
+                Optional: set up your account
+              </p>
+              <p style="margin:0 0 20px;font-size:14px;color:#52525b;line-height:1.6;">
+                Click the button below to log in and access your membership
+                details, streak, and leaderboard. This link works once and
+                expires in 24 hours.
+              </p>
+              <table cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="border-radius:8px;background:#18181b;">
+                    <a
+                      href="${magicLink}"
+                      style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;"
+                    >
+                      Log in to Stren →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px;background:#fafafa;border-top:1px solid #e4e4e7;">
+              <p style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.6;">
+                This email was sent by staff at ${gymName} when creating your
+                membership. If you believe this was sent in error, you can
+                safely ignore it — no account has been activated without the
+                login link above.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+}
+
+// ---------------------------------------------------------------------------
+// Plain-text fallback
+// ---------------------------------------------------------------------------
+
+function buildEmailText(params: {
+  memberName: string
+  gymName: string
+  qrPayload: string
+  magicLink: string
+}): string {
+  const { memberName, gymName, qrPayload, magicLink } = params
+  return [
+    `Welcome to ${gymName}, ${memberName}!`,
+    ``,
+    `Your membership is active. Show your QR code at the kiosk to check in.`,
+    `QR data: ${qrPayload}`,
+    ``,
+    `Optionally, set up your Stren account (link valid 24 hours):`,
+    magicLink,
+    ``,
+    `If you did not request this, you can ignore this email.`,
+  ].join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function sendOnboardingEmail(
+  payload: OnboardingEmailPayload,
+): Promise<SendResult> {
+  const { to, memberName, gymName, qrPayload, magicLink } = payload
+
+  // Generate QR as an inline image so no separate CDN/storage needed.
+  const qrDataUri = await generateQrDataUri(qrPayload)
+
+  const html = buildEmailHtml({ memberName, gymName, qrDataUri, magicLink })
+  const text = buildEmailText({ memberName, gymName, qrPayload, magicLink })
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getResendKey()}`,
+    },
+    body: JSON.stringify({
+      from: getFromAddress(),
+      to: [to],
+      subject: `Your ${gymName} membership is ready`,
+      html,
+      text,
+    }),
+  })
+
+  if (!res.ok) {
+    let message = `Resend error ${res.status}`
+    try {
+      const body = await res.json() as { message?: string }
+      if (body.message) message = body.message
+    } catch {
+      // ignore parse error
+    }
+    return { ok: false, error: message }
+  }
+
+  const data = (await res.json()) as { id?: string }
+  return { ok: true, messageId: data.id ?? "unknown" }
+}
