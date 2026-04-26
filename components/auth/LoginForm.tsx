@@ -106,6 +106,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
           : '/login';
 
         try {
+          window.localStorage.removeItem(LOGIN_ORIGIN_STORAGE_KEY);
           window.localStorage.setItem(LOGIN_ORIGIN_STORAGE_KEY, originPath);
         } catch {
           // Storage can be unavailable in private/locked-down browser contexts.
@@ -227,7 +228,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
         <p style={{ color: 'var(--color-text-secondary)' }}>
           Don&apos;t have an account?{' '}
           <Link
-            href={gymCode ? `/gym/${encodeURIComponent(gymCode)}/signup` : '/signup'}
+            href={gymCode ? `/gym/${encodeURIComponent(gymCode)}/signup?from=login` : '/signup'}
             className="font-semibold transition-colors"
             style={{ color: 'var(--color-primary)' }}
             onMouseEnter={(e) => {

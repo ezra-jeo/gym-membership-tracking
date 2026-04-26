@@ -3,6 +3,9 @@
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+const LOGIN_ORIGIN_STORAGE_KEY = 'stren.auth.loginOriginPath';
+const GYM_LOGIN_PATH_REGEX = /^\/gym\/[^/]+\/login$/;
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -12,6 +15,16 @@ function LoginPageContent() {
     if (gym) {
       router.replace(`/gym/${encodeURIComponent(gym)}/login`);
       return;
+    }
+
+    try {
+      const storedOriginPath = window.localStorage.getItem(LOGIN_ORIGIN_STORAGE_KEY);
+      if (storedOriginPath && GYM_LOGIN_PATH_REGEX.test(storedOriginPath)) {
+        router.replace(storedOriginPath);
+        return;
+      }
+    } catch {
+      // Storage can be unavailable in private/locked-down browser contexts.
     }
 
     router.replace('/gym-select');

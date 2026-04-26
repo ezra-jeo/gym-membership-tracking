@@ -41,7 +41,7 @@ export default function SignUpChooser() {
 
           <div className="space-y-4">
             <Link
-              href="/signup/member"
+              href="/gym-select"
               className="flex items-center gap-4 w-full p-5 rounded-lg border transition-all hover:scale-[1.02] active:scale-100"
               style={{ borderColor: 'var(--color-light-gray)', borderWidth: '1.5px' }}
               onMouseEnter={(e) => {
@@ -70,7 +70,7 @@ export default function SignUpChooser() {
             </Link>
 
             <Link
-              href="/signup/admin"
+              href="/signup/admin?from=signup"
               className="flex items-center gap-4 w-full p-5 rounded-lg border transition-all hover:scale-[1.02] active:scale-100"
               style={{ borderColor: 'var(--color-light-gray)', borderWidth: '1.5px' }}
               onMouseEnter={(e) => {

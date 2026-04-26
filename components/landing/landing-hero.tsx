@@ -64,7 +64,7 @@ export function LandingHero() {
           </Link>
 
           <Link
-            href="/signup/admin"
+            href="/signup/admin?from=landing"
             onClick={() => track('hero_register_gym_click')}
             className="inline-flex items-center justify-center px-7 py-4 rounded-full font-semibold text-sm uppercase tracking-widest border transition-colors duration-300 hover:bg-white/10"
             style={{

@@ -529,7 +529,7 @@ function GymLandingPage({ gym, isManagementPreview }: { gym: GymData; isManageme
                   Join {gym.name}
                 </button>
               </Link>
-              <Link href={`/gym/${encodeURIComponent(gym.code)}/login`}>
+              <Link href={`/gym/${encodeURIComponent(gym.code)}/login?from=landing`}>
                 <button
                   className="w-full max-w-[90vw] truncate rounded-xl border px-8 py-4 text-base font-semibold uppercase tracking-[0.14em] sm:w-auto sm:max-w-none sm:px-10"
                   style={{ borderColor: 'rgba(255,255,255,0.7)', color: 'var(--color-white)', backgroundColor: 'rgba(0,0,0,0.18)' }}

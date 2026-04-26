@@ -160,6 +160,7 @@ export type Database = {
           description: string | null
           directions: string | null
           id: string
+          is_published: boolean | null
           logo_path: string | null
           logo_url: string | null
           map_embed_url: string | null
@@ -183,6 +184,7 @@ export type Database = {
           description?: string | null
           directions?: string | null
           id?: string
+          is_published?: boolean | null
           logo_path?: string | null
           logo_url?: string | null
           map_embed_url?: string | null
@@ -206,6 +208,7 @@ export type Database = {
           description?: string | null
           directions?: string | null
           id?: string
+          is_published?: boolean | null
           logo_path?: string | null
           logo_url?: string | null
           map_embed_url?: string | null

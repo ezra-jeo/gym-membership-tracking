@@ -106,7 +106,7 @@ export function LandingNav() {
             {/* Right: Gym owner entry */}
             <div className="hidden sm:block">
               <Link
-                href="/signup/admin"
+                href="/signup/admin?from=landing"
                 className="inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-200 hover:scale-[1.02]"
                 style={{
                   backgroundColor: scrolled ? 'var(--color-primary)' : 'rgba(255,255,255,0.16)',
@@ -217,7 +217,7 @@ export function LandingNav() {
                   Create Account
                 </Link>
                 <Link
-                  href="/signup/admin"
+                  href="/signup/admin?from=landing"
                   onClick={closeMenu}
                   className="block w-full text-center px-6 py-3.5 rounded-full font-semibold text-sm uppercase tracking-wider border-2 transition-all duration-200 hover:scale-[1.02]"
                   style={{
