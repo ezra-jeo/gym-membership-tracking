@@ -80,7 +80,7 @@ export default function AdminLayout({
   }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, isSigningOut, profile, router, user]);
 
   useEffect(() => {
-    if (isLoading || !user || profile || profileRecoveryAttempts >= 3) return;
+    if (isLoading || !user || profile || attemptedProfileRecovery || profileRecoveryAttempts >= 3) return;
 
     let active = true;
     setAttemptedProfileRecovery(true);

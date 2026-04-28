@@ -66,6 +66,9 @@ export interface Profile {
   status: ProfileStatus
   gymId: string | null
   avatarUrl: string | null
+  avatarUpdatedAt: string | null
+  avatarChangeLockedUntil: string | null
+  avatarChangeCount: number
   qrCode: string
   createdAt: string
 }

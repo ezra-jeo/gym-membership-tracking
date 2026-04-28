@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/lib/auth-context"
-import QRCode from "qrcode"
+import { OnboardMemberModal } from "@/components/admin/OnboardMemberModal"
 import {
   A,
   ACard,
@@ -20,7 +20,7 @@ import {
   SummaryBox,
 } from "@/lib/admin-ui"
 import { toast } from "sonner"
-import { Snowflake, Play, AlertTriangle, Users, UserPlus, Upload, QrCode, Copy } from "lucide-react"
+import { Snowflake, Play, AlertTriangle, Users, UserPlus } from "lucide-react"
 
 interface MemberRow {
   profile_id: string
@@ -129,20 +129,6 @@ export default function MembersPage() {
   const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
   const [renewLoading, setRenewLoading] = useState(false)
   const [onboardOpen, setOnboardOpen] = useState(false)
-  const [onboardPlans, setOnboardPlans] = useState<PlanOption[]>([])
-  const [onboardName, setOnboardName] = useState("")
-  const [onboardEmail, setOnboardEmail] = useState("")
-  const [onboardPlanId, setOnboardPlanId] = useState("")
-  const [onboardPaymentMethod, setOnboardPaymentMethod] = useState<"cash" | "gcash">("cash")
-  const [onboardAmountPaid, setOnboardAmountPaid] = useState("")
-  const [onboardAvatarFile, setOnboardAvatarFile] = useState<File | null>(null)
-  const [onboardAvatarPreview, setOnboardAvatarPreview] = useState("")
-  const [onboardAvatarUrl, setOnboardAvatarUrl] = useState("")
-  const [onboardSubmitting, setOnboardSubmitting] = useState(false)
-  const [onboardResult, setOnboardResult] = useState<OnboardResponse | null>(null)
-  const [onboardQrDataUrl, setOnboardQrDataUrl] = useState("")
-  const avatarInputRef = useRef<HTMLInputElement | null>(null)
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
   const plansCacheRef = useRef<{ gymId: string; cachedAt: number; plans: PlanOption[] } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -329,239 +315,6 @@ export default function MembersPage() {
     }
   }
 
-  function resetOnboardDraft() {
-    if (onboardAvatarPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(onboardAvatarPreview)
-    }
-    setOnboardName("")
-    setOnboardEmail("")
-    setOnboardPlanId("")
-    setOnboardPaymentMethod("cash")
-    setOnboardAmountPaid("")
-    setOnboardAvatarFile(null)
-    setOnboardAvatarPreview("")
-    setOnboardAvatarUrl("")
-    setOnboardSubmitting(false)
-    setOnboardResult(null)
-    setOnboardQrDataUrl("")
-  }
-
-  function pickOnboardPlan(planId: string) {
-    setOnboardPlanId(planId)
-    const plan = onboardPlans.find((p) => p.id === planId)
-    setOnboardAmountPaid(plan ? String(plan.price) : "")
-  }
-
-  function prepareOnboardAnother() {
-    if (onboardAvatarPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(onboardAvatarPreview)
-    }
-    setOnboardName("")
-    setOnboardEmail("")
-    setOnboardAvatarFile(null)
-    setOnboardAvatarPreview("")
-    setOnboardAvatarUrl("")
-    setOnboardResult(null)
-    setOnboardQrDataUrl("")
-    setOnboardSubmitting(false)
-    setTimeout(() => nameInputRef.current?.focus(), 0)
-  }
-
-  async function copyToClipboard(text: string) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const input = document.createElement("textarea")
-        input.value = text
-        input.style.position = "fixed"
-        input.style.opacity = "0"
-        document.body.appendChild(input)
-        input.select()
-        document.execCommand("copy")
-        document.body.removeChild(input)
-      }
-      toast.success("Magic link copied")
-    } catch {
-      toast.error("Failed to copy magic link")
-    }
-  }
-
-  async function openOnboardDialog() {
-    resetOnboardDraft()
-    setOnboardPlans([])
-    setOnboardOpen(true)
-
-    if (!profile?.gymId) {
-      toast.error("Gym context is missing")
-      return
-    }
-
-    try {
-      const plans = await getActivePlans(false)
-      setOnboardPlans(plans)
-      if (plans.length > 0) {
-        setOnboardPlanId(plans[0].id)
-        setOnboardAmountPaid(String(plans[0].price))
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load plans"
-      toast.error(message)
-    }
-  }
-
-  function handleAvatarFileSelect(file: File | null) {
-    if (!file) return
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file")
-      return
-    }
-
-    const maxSizeBytes = 8 * 1024 * 1024
-    if (file.size > maxSizeBytes) {
-      toast.error("Photo must be 8MB or smaller")
-      return
-    }
-
-    if (onboardAvatarPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(onboardAvatarPreview)
-    }
-
-    setOnboardAvatarFile(file)
-    setOnboardAvatarUrl("")
-    setOnboardResult(null)
-    setOnboardQrDataUrl("")
-    setOnboardAvatarPreview(URL.createObjectURL(file))
-  }
-
-  async function uploadOnboardAvatar(file: File): Promise<string> {
-    if (!profile?.gymId) {
-      throw new Error("Missing gym context")
-    }
-
-    const extension = (file.name.split(".").pop() ?? "jpg").toLowerCase()
-    const safeExtension = /^[a-z0-9]+$/.test(extension) ? extension : "jpg"
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExtension}`
-    const path = `${profile.gymId}/member-avatars/${fileName}`
-
-    const uploadPromise = supabase.storage
-      .from("gym-assets")
-      .upload(path, file, {
-        upsert: false,
-        contentType: file.type || "image/jpeg",
-      })
-
-    const { error: uploadError } = await withTimeout(
-      uploadPromise,
-      15000,
-      "Avatar upload timed out",
-    )
-
-    if (uploadError) {
-      throw new Error(uploadError.message)
-    }
-
-    const { data } = supabase.storage.from("gym-assets").getPublicUrl(path)
-    return data.publicUrl
-  }
-
-  async function handleOnboardMember() {
-    const trimmedName = onboardName.trim()
-    const trimmedEmail = onboardEmail.trim().toLowerCase()
-
-    if (!trimmedName || trimmedName.length < 2) {
-      toast.error("Member name must be at least 2 characters")
-      return
-    }
-    if (!trimmedEmail) {
-      toast.error("Email is required")
-      return
-    }
-    if (!onboardPlanId) {
-      toast.error("Please select a membership plan")
-      return
-    }
-    if (!onboardAvatarFile && !onboardAvatarUrl) {
-      toast.error("A member photo is required")
-      return
-    }
-
-    setOnboardSubmitting(true)
-    setOnboardResult(null)
-    setOnboardQrDataUrl("")
-
-    try {
-      let avatarUrl = onboardAvatarUrl
-      if (!avatarUrl && onboardAvatarFile) {
-        avatarUrl = await uploadOnboardAvatar(onboardAvatarFile)
-        setOnboardAvatarUrl(avatarUrl)
-      }
-
-      const amountPaid = Number(onboardAmountPaid)
-      const payload = {
-        name: trimmedName,
-        email: trimmedEmail,
-        avatarUrl,
-        planId: onboardPlanId,
-        paymentMethod: onboardPaymentMethod,
-        amountPaid: Number.isFinite(amountPaid) ? amountPaid : undefined,
-      }
-
-      const response = await fetch("/api/admin/members/onboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(20000),
-      }).catch((error) => {
-        if (error instanceof Error && error.name === "TimeoutError") {
-          throw new Error("Onboarding request timed out. Member may still have been created; please retry or check member list.")
-        }
-        throw error
-      })
-
-      const data = (await response.json().catch(() => ({}))) as Partial<OnboardResponse> & { error?: string }
-
-      if (!response.ok && response.status !== 207) {
-        toast.error(data.error ?? "Failed to onboard member")
-        return
-      }
-
-      const result: OnboardResponse = {
-        memberId: data.memberId ?? "",
-        membershipId: data.membershipId ?? "",
-        qrCode: data.qrCode ?? "",
-        magicLink: data.magicLink ?? null,
-        redirectTo: typeof data.redirectTo === "string" ? data.redirectTo : undefined,
-        emailSent: data.emailSent,
-        emailError: data.emailError,
-      }
-      setOnboardResult(result)
-
-      if (result.qrCode) {
-        const dataUrl = await QRCode.toDataURL(result.qrCode, {
-          width: 220,
-          margin: 2,
-          color: { dark: "#2C2C2C", light: "#FFFFFF" },
-        })
-        setOnboardQrDataUrl(dataUrl)
-      }
-
-      if (result.emailError) {
-        toast.warning("Member onboarded, but email delivery failed")
-      } else {
-        toast.success("Member onboarded successfully")
-      }
-
-      void fetchMembers(true)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown onboarding error"
-      toast.error(`Failed to onboard member: ${message}`)
-    } finally {
-      setOnboardSubmitting(false)
-    }
-  }
-
   async function handleRenewMembership() {
     if (!renewMember) return
     const plan = renewPlans.find((p) => p.id === renewPlanId)
@@ -615,9 +368,9 @@ export default function MembersPage() {
         title="Members"
         subtitle={`${members.length} member account${members.length !== 1 ? "s" : ""}`}
         action={
-          <PrimaryBtn onClick={() => void openOnboardDialog()}>
+          <PrimaryBtn onClick={() => setOnboardOpen(true)}>
             <UserPlus className="h-4 w-4" />
-            Onboard Member
+            Add member
           </PrimaryBtn>
         }
       />
@@ -829,7 +582,7 @@ export default function MembersPage() {
             <ChoicePicker
               label="Payment Method"
               value={renewPaymentMethod}
-              onChange={(v) => setRenewPaymentMethod(v as "cash" | "gcash")}
+              onChange={(v: "cash" | "gcash") => setRenewPaymentMethod(v)}
               options={[
                 { value: "cash", label: "Cash" },
                 { value: "gcash", label: "GCash" },
@@ -856,221 +609,11 @@ export default function MembersPage() {
         )}
       </Modal>
 
-      <Modal
+      <OnboardMemberModal
         open={onboardOpen}
-        onClose={() => {
-          setOnboardOpen(false)
-          resetOnboardDraft()
-        }}
-        title="Onboard New Member"
-        width={680}
-      >
-        <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Member Name</label>
-              <input
-                ref={nameInputRef}
-                value={onboardName}
-                onChange={(e) => setOnboardName(e.target.value)}
-                placeholder="Juan Dela Cruz"
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Email</label>
-              <input
-                type="email"
-                value={onboardEmail}
-                onChange={(e) => setOnboardEmail(e.target.value)}
-                placeholder="member@email.com"
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Membership Plan</label>
-              <select
-                value={onboardPlanId}
-                onChange={(e) => pickOnboardPlan(e.target.value)}
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-              >
-                {onboardPlans.length === 0 ? (
-                  <option value="">No active plans available</option>
-                ) : (
-                  onboardPlans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.name} · {plan.duration_days} days · ₱{plan.price.toLocaleString()}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Payment Method</label>
-              <select
-                value={onboardPaymentMethod}
-                onChange={(e) => setOnboardPaymentMethod(e.target.value as "cash" | "gcash")}
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-              >
-                <option value="cash">Cash</option>
-                <option value="gcash">GCash</option>
-              </select>
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Amount Paid (PHP)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={onboardAmountPaid}
-                onChange={(e) => setOnboardAmountPaid(e.target.value)}
-                placeholder="0"
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium" style={{ color: A.text }}>Member Photo</p>
-                <p className="text-xs" style={{ color: A.muted }}>Required for onboarding. Capture from camera or upload a photo.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
-                style={{ color: A.primary, border: `1px solid ${A.border}` }}
-              >
-                <Upload className="h-3 w-3" />
-                Select Photo
-              </button>
-            </div>
-
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => handleAvatarFileSelect(e.target.files?.[0] ?? null)}
-            />
-
-            {onboardAvatarPreview ? (
-              <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
-                <img src={onboardAvatarPreview} alt="Member avatar preview" className="h-56 w-full object-cover" />
-              </div>
-            ) : (
-              <div
-                className="flex h-40 items-center justify-center rounded-lg text-sm"
-                style={{ border: `1px dashed ${A.border}`, color: A.muted }}
-              >
-                Photo not selected yet
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            <GhostBtn
-              onClick={() => {
-                setOnboardOpen(false)
-                resetOnboardDraft()
-              }}
-            >
-              Cancel
-            </GhostBtn>
-            <PrimaryBtn
-              onClick={handleOnboardMember}
-              disabled={onboardSubmitting || onboardPlans.length === 0}
-            >
-              {onboardSubmitting ? "Onboarding..." : "Create Member + Send Access"}
-            </PrimaryBtn>
-          </div>
-
-          {onboardResult && (
-            <div className="space-y-3 rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
-              <div className="flex items-center gap-2">
-                <QrCode className="h-4 w-4" style={{ color: A.primary }} />
-                <p className="text-sm font-semibold" style={{ color: A.text }}>Member Onboarded</p>
-              </div>
-
-              {onboardQrDataUrl ? (
-                <div className="rounded-lg bg-white p-3 inline-block">
-                  <img src={onboardQrDataUrl} alt="Member QR code" className="h-44 w-44" />
-                </div>
-              ) : (
-                <p className="text-xs" style={{ color: A.muted }}>QR preview not available.</p>
-              )}
-
-              <SummaryBox
-                rows={[
-                  { label: "Member ID", value: onboardResult.memberId || "-" },
-                  { label: "Membership ID", value: onboardResult.membershipId || "-" },
-                  { label: "Email Delivery", value: onboardResult.emailError ? "Failed (manual share needed)" : "Sent" },
-                ]}
-              />
-
-              {onboardResult.emailError && (
-                <p className="text-xs" style={{ color: "var(--admin-expired-text)" }}>
-                  {onboardResult.emailError}
-                </p>
-              )}
-
-              {onboardResult.magicLink && (
-                <div>
-                  <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link (fallback copy)</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      readOnly
-                      value={onboardResult.magicLink}
-                      className="w-full rounded-lg px-3 py-2 text-xs outline-none"
-                      style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void copyToClipboard(onboardResult.magicLink ?? "")}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-2 text-xs font-medium"
-                      style={{ color: A.primary, border: `1px solid ${A.border}` }}
-                    >
-                      <Copy className="h-3 w-3" />
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {onboardResult.redirectTo && (
-                <div>
-                  <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link Redirect Target</p>
-                  <input
-                    readOnly
-                    value={onboardResult.redirectTo}
-                    className="w-full rounded-lg px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <PrimaryBtn onClick={prepareOnboardAnother} size="sm">
-                  Onboard Another
-                </PrimaryBtn>
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
+        onClose={() => setOnboardOpen(false)}
+        onSuccess={() => void fetchMembers(true)}
+      />
     </div>
   )
 }

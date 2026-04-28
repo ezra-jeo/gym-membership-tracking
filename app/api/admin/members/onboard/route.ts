@@ -154,17 +154,22 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   if (existingProfile) {
-    const isSameGym = !existingProfile.gym_id || existingProfile.gym_id === profile.gym_id
-    return NextResponse.json(
-      {
-        error: isSameGym
-          ? `This email is already a member in your gym (${existingProfile.name ?? "existing member"}). Use Renew for existing members.`
-          : "This email is already assigned to another gym.",
-      },
-      { status: 409 },
-    )
-  }
+    // Already belongs to a different gym — hard block
+    if (existingProfile.gym_id && existingProfile.gym_id !== profile.gym_id) {
+      return NextResponse.json(
+        { error: "This email is already assigned to another gym." },
+        { status: 409 },
+      )
+    }
 
+    // Already a member of THIS gym — tell staff to use Renew
+    if (existingProfile.gym_id === profile.gym_id) {
+      return NextResponse.json(
+        { error: `${existingProfile.name ?? "This person"} is already a member here. Use Renew instead.` },
+        { status: 409 },
+      )
+    }
+  }
   const { data: createdAuth, error: createAuthError } =
     await admin.auth.admin.createUser({
       email: body.email,

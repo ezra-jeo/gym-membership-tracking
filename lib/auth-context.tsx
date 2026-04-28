@@ -469,6 +469,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         2,
       )
 
+      const profileData = data as (typeof data & {
+        avatar_updated_at?: string | null
+        avatar_change_locked_until?: string | null
+        avatar_change_count?: number | null
+      }) | null
+
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
           await recoverFromInvalidRefreshToken(client)
@@ -479,19 +485,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null
       }
 
-      if (data) {
+      if (profileData) {
         recentProfileHydrationRef.current = { userId, at: Date.now() }
         built = {
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          contactNumber: data.contact_number,
-          role: data.role ?? "member",
-          status: data.status ?? "active",
-          gymId: data.gym_id ?? null,
-          avatarUrl: data.avatar_url,
-          qrCode: data.qr_code ?? "",
-          createdAt: data.created_at ?? new Date().toISOString(),
+          id: profileData.id,
+          email: profileData.email,
+          name: profileData.name,
+          contactNumber: profileData.contact_number,
+          role: profileData.role ?? "member",
+          status: profileData.status ?? "active",
+          gymId: profileData.gym_id ?? null,
+          avatarUrl: profileData.avatar_url,
+          avatarUpdatedAt: profileData.avatar_updated_at ?? null,
+          avatarChangeLockedUntil: profileData.avatar_change_locked_until ?? null,
+          avatarChangeCount: profileData.avatar_change_count ?? 0,
+          qrCode: profileData.qr_code ?? "",
+          createdAt: profileData.created_at ?? new Date().toISOString(),
         }
         setProfile(built)
       } else {
