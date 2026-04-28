@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { createClient } from "@/lib/supabase"
 import { withTimeout } from "@/lib/async-guard"
 import type { User } from "@supabase/supabase-js"
@@ -207,7 +208,9 @@ async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): P
   throw lastError ?? new Error("Unknown lock error")
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+// Inner component — contains all the hooks including useSearchParams.
+// Must be wrapped in <Suspense> by the parent (AuthProvider below).
+function AuthProviderInner({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -612,6 +615,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{ user, profile, isLoading, isSigningOut, needsPasswordSetup, signIn, signUp, signOut, completePasswordSetup, refreshProfile }}>
       {children}
     </AuthContext.Provider>
+  )
+}
+
+// AuthProvider wraps the inner component in Suspense so that useSearchParams()
+// inside AuthProviderInner is covered by a boundary, satisfying Next.js's requirement.
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <AuthProviderInner>{children}</AuthProviderInner>
+    </Suspense>
   )
 }
 

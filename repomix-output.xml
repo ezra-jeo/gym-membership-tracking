@@ -304,126 +304,6 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 NEXT_PUBLIC_APP_URL=https://yourdomain.com
 </file>
 
-<file path="app/api/member/avatar/route.ts">
-import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase-admin"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-
-interface AvatarCooldownResult {
-  updated?: boolean
-  nextAllowedAt?: string | null
-  next_allowed_at?: string | null
-  message?: string | null
-}
-
-const AVATAR_BUCKET_CANDIDATES = ["member-avatars", "gym-assets"] as const
-
-function isBucketNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false
-  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
-  const maybeCode = "statusCode" in error ? String((error as { statusCode?: unknown }).statusCode ?? "") : ""
-  return maybeCode === "404" || /bucket not found/i.test(maybeMessage)
-}
-
-function parseDataUrl(dataUrl: string): { contentType: string; buffer: Buffer } {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) {
-    throw new Error("Invalid avatar image payload.")
-  }
-
-  return {
-    contentType: match[1],
-    buffer: Buffer.from(match[2], "base64"),
-  }
-}
-
-function buildAvatarPath(userId: string): string {
-  const random = Math.random().toString(36).slice(2)
-  return `avatars/${userId}/${Date.now()}-${random}.jpg`
-}
-
-export async function POST(request: Request) {
-  const supabase = await createServerSupabaseClient()
-  const admin = createAdminClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
-  }
-
-  let body: { avatarUrl?: string; avatarDataUrl?: string }
-  try {
-    body = (await request.json()) as { avatarUrl?: string; avatarDataUrl?: string }
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 })
-  }
-
-  const avatarDataUrl = typeof body.avatarDataUrl === "string" ? body.avatarDataUrl.trim() : ""
-  const avatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : ""
-
-  let publicUrl = avatarUrl
-  let uploadedPath: string | null = null
-
-  if (avatarDataUrl) {
-    const { contentType, buffer } = parseDataUrl(avatarDataUrl)
-    const uploadPath = buildAvatarPath(user.id)
-
-    for (const bucket of AVATAR_BUCKET_CANDIDATES) {
-      const { error: uploadError } = await admin.storage.from(bucket).upload(uploadPath, buffer, {
-        upsert: true,
-        contentType,
-      })
-
-      if (!uploadError) {
-        uploadedPath = uploadPath
-        publicUrl = admin.storage.from(bucket).getPublicUrl(uploadPath).data.publicUrl
-        break
-      }
-
-      if (!isBucketNotFoundError(uploadError)) {
-        return NextResponse.json({ error: uploadError.message }, { status: 400 })
-      }
-    }
-
-    if (!publicUrl) {
-      return NextResponse.json({ error: "Avatar storage bucket is missing. Please create member-avatars or gym-assets." }, { status: 500 })
-    }
-  }
-
-  const { data, error } = await (admin as typeof admin & {
-    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: AvatarCooldownResult | AvatarCooldownResult[] | null; error: { message: string } | null }>
-  }).rpc("set_member_avatar_with_cooldown", {
-    p_member_id: user.id,
-    p_avatar_url: publicUrl,
-    p_lock_days: 14,
-  })
-
-  if (error) {
-    if (uploadedPath) {
-      for (const bucket of AVATAR_BUCKET_CANDIDATES) {
-        void admin.storage.from(bucket).remove([uploadedPath])
-      }
-    }
-    return NextResponse.json({ error: error.message }, { status: 400 })
-  }
-
-  const payload = Array.isArray(data) ? (data[0] as AvatarCooldownResult | undefined) : (data as AvatarCooldownResult | null)
-  const updated = typeof payload?.updated === "boolean" ? payload.updated : true
-  const nextAllowedAt = payload?.nextAllowedAt ?? payload?.next_allowed_at ?? null
-  const message = payload?.message ?? (updated ? "Avatar updated successfully." : "Avatar change is on cooldown.")
-
-  return NextResponse.json({
-    updated,
-    nextAllowedAt,
-    message,
-    avatarUrl: publicUrl,
-  })
-}
-</file>
-
 <file path="CACHE-VERIFICATION.md">
 # Stren Caching and Performance Verification Guide
 
@@ -623,838 +503,6 @@ If you want stronger observability, we can add:
 1. A tiny debug panel showing service-worker status and cache keys
 2. A manual "refresh data" action on data-heavy pages
 3. Lightweight client timing logs for route transitions
-</file>
-
-<file path="components/admin/OnboardMemberModal.tsx">
-"use client"
-
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import QRCode from "qrcode"
-import { toast } from "sonner"
-import { Camera, CheckCircle2, Copy, RotateCcw, Upload } from "lucide-react"
-import { useAuth } from "@/lib/auth-context"
-import { createClient } from "@/lib/supabase"
-import { A, ChoicePicker, GhostBtn, Modal, PrimaryBtn, SummaryBox } from "@/lib/admin-ui"
-
-interface PlanOption {
-  id: string
-  name: string
-  price: number
-  duration_days: number
-}
-
-interface OnboardResponse {
-  memberId: string
-  membershipId: string
-  qrCode: string
-  magicLink: string | null
-  redirectTo?: string
-  emailSent?: boolean
-  emailError?: string
-}
-
-type Step = "details" | "photo" | "confirm" | "done"
-
-type FormState = {
-  name: string
-  email: string
-  planId: string
-  paymentMethod: "cash" | "gcash"
-  amountPaid: string
-}
-
-const INITIAL_FORM: FormState = {
-  name: "",
-  email: "",
-  planId: "",
-  paymentMethod: "cash",
-  amountPaid: "",
-}
-
-const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
-const AVATAR_BUCKET_CANDIDATES = ["member-avatars", "gym-assets"] as const
-
-interface Props {
-  open: boolean
-  onClose: () => void
-  onSuccess: () => void
-}
-
-function buildOnboardPhotoPath() {
-  const random = Math.random().toString(36).slice(2)
-  return `avatars/${Date.now()}-${random}.jpg`
-}
-
-function blobFromDataUrl(dataUrl: string): Promise<Blob> {
-  return fetch(dataUrl).then((response) => response.blob())
-}
-
-function createRequestTimeout(timeoutMs: number) {
-  const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-  return {
-    signal: controller.signal,
-    clear: () => window.clearTimeout(timer),
-  }
-}
-
-function isBucketNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false
-  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
-  const maybeCode = "statusCode" in error ? String((error as { statusCode?: unknown }).statusCode ?? "") : ""
-  return maybeCode === "404" || /bucket not found/i.test(maybeMessage)
-}
-
-export function OnboardMemberModal({ open, onClose, onSuccess }: Props) {
-  const { profile } = useAuth()
-  const supabase = useMemo(() => createClient(), [])
-  const nameInputRef = useRef<HTMLInputElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const objectUrlRef = useRef<string | null>(null)
-
-  const [step, setStep] = useState<Step>("details")
-  const [plans, setPlans] = useState<PlanOption[]>([])
-  const [loadingPlans, setLoadingPlans] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [photoDataUrl, setPhotoDataUrl] = useState("")
-  const [cameraActive, setCameraActive] = useState(false)
-  const [cameraError, setCameraError] = useState("")
-  const [result, setResult] = useState<OnboardResponse | null>(null)
-  const [resultQrDataUrl, setResultQrDataUrl] = useState("")
-  const [submitError, setSubmitError] = useState("")
-
-  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === form.planId) ?? null, [form.planId, plans])
-
-  const resetDraft = useCallback(() => {
-    setStep("details")
-    setPlans([])
-    setLoadingPlans(false)
-    setSubmitting(false)
-    setForm(INITIAL_FORM)
-    setPhotoDataUrl("")
-    setCameraActive(false)
-    setCameraError("")
-    setResult(null)
-    setResultQrDataUrl("")
-    setSubmitError("")
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }, [])
-
-  const stopCamera = useCallback(async () => {
-    const stream = streamRef.current
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-
-    setCameraActive(false)
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-    }
-  }, [])
-
-  const loadPlans = useCallback(async () => {
-    if (!profile?.gymId) return
-
-    setLoadingPlans(true)
-    try {
-      const { data, error } = await supabase
-        .from("membership_plans")
-        .select("id, name, price, duration_days")
-        .eq("gym_id", profile.gymId)
-        .eq("is_active", true)
-        .order("price")
-
-      if (error) {
-        throw error
-      }
-
-      const nextPlans = (data ?? []) as PlanOption[]
-      setPlans(nextPlans)
-      setForm((current) => ({
-        ...current,
-        planId: current.planId || nextPlans[0]?.id || "",
-        amountPaid: current.amountPaid || (nextPlans[0] ? String(nextPlans[0].price) : ""),
-      }))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load plans"
-      toast.error(message)
-    } finally {
-      setLoadingPlans(false)
-    }
-  }, [profile?.gymId, supabase])
-
-  useEffect(() => {
-    if (!open) {
-      void stopCamera()
-      resetDraft()
-      return
-    }
-
-    setStep("details")
-    void loadPlans()
-    setTimeout(() => nameInputRef.current?.focus(), 0)
-
-    return () => {
-      void stopCamera()
-    }
-  }, [loadPlans, open, resetDraft, stopCamera])
-
-  useEffect(() => {
-    if (!result?.qrCode) {
-      setResultQrDataUrl("")
-      return
-    }
-
-    let active = true
-    void QRCode.toDataURL(result.qrCode, {
-      width: 220,
-      margin: 2,
-      color: { dark: "#2C2C2C", light: "#FFFFFF" },
-    }).then((dataUrl) => {
-      if (active) setResultQrDataUrl(dataUrl)
-    })
-
-    return () => {
-      active = false
-    }
-  }, [result?.qrCode])
-
-  useEffect(() => {
-    return () => {
-      void stopCamera()
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-        objectUrlRef.current = null
-      }
-    }
-  }, [stopCamera])
-
-  async function startCamera() {
-    if (cameraActive) return
-
-    setCameraError("")
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      setCameraActive(true)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to access camera"
-      setCameraError(message)
-      toast.error(message)
-    }
-  }
-
-  async function capturePhoto() {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-
-    const width = video.videoWidth || 1280
-    const height = video.videoHeight || 720
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext("2d")
-    if (!context) return
-
-    context.drawImage(video, 0, 0, width, height)
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
-    setPhotoDataUrl(dataUrl)
-    await stopCamera()
-    setStep("confirm")
-  }
-
-  async function handleFileSelect(file: File | null) {
-    if (!file) return
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file")
-      return
-    }
-
-    if (file.size > MAX_PHOTO_SIZE_BYTES) {
-      toast.error("Photo must be 5MB or smaller")
-      return
-    }
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = String(reader.result ?? "")
-      setPhotoDataUrl(dataUrl)
-      setStep("confirm")
-    }
-    reader.readAsDataURL(file)
-  }
-
-  function clearPhoto() {
-    setPhotoDataUrl("")
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }
-
-  async function uploadPhoto(dataUrl: string) {
-    if (!profile?.gymId) {
-      throw new Error("Missing gym context")
-    }
-
-    const blob = await blobFromDataUrl(dataUrl)
-    const path = `${profile.gymId}/${buildOnboardPhotoPath()}`
-    let selectedBucket: (typeof AVATAR_BUCKET_CANDIDATES)[number] | null = null
-
-    for (const bucket of AVATAR_BUCKET_CANDIDATES) {
-      const uploadResult = await supabase.storage.from(bucket).upload(path, blob, {
-        upsert: true,
-        contentType: "image/jpeg",
-      })
-
-      if (!uploadResult.error) {
-        selectedBucket = bucket
-        break
-      }
-
-      if (!isBucketNotFoundError(uploadResult.error)) {
-        throw new Error(uploadResult.error.message)
-      }
-    }
-
-    if (!selectedBucket) {
-      throw new Error("Avatar storage bucket is missing. Please create member-avatars or gym-assets.")
-    }
-
-    const { data } = supabase.storage.from(selectedBucket).getPublicUrl(path)
-    return `${data.publicUrl}?t=${Date.now()}`
-  }
-
-  async function handleContinueFromDetails() {
-    const trimmedName = form.name.trim()
-    const trimmedEmail = form.email.trim().toLowerCase()
-
-    if (trimmedName.length < 2) {
-      toast.error("Member name must be at least 2 characters")
-      return
-    }
-
-    if (!trimmedEmail) {
-      toast.error("Email is required")
-      return
-    }
-
-    if (!form.planId) {
-      toast.error("Please select a membership plan")
-      return
-    }
-
-    setForm((current) => ({ ...current, name: trimmedName, email: trimmedEmail }))
-    setStep("photo")
-  }
-
-  async function handleSaveMember() {
-    const trimmedName = form.name.trim()
-    const trimmedEmail = form.email.trim().toLowerCase()
-
-    if (!trimmedName || !trimmedEmail || !form.planId) {
-      toast.error("Please complete the member details first")
-      setStep("details")
-      return
-    }
-
-    if (!photoDataUrl) {
-      toast.error("A member photo is required")
-      setStep("photo")
-      return
-    }
-
-    setSubmitting(true)
-    setSubmitError("")
-    try {
-      const avatarUrl = await uploadPhoto(photoDataUrl)
-      const amountPaid = Number(form.amountPaid)
-      const payload = {
-        name: trimmedName,
-        email: trimmedEmail,
-        avatarUrl,
-        planId: form.planId,
-        paymentMethod: form.paymentMethod,
-        amountPaid: Number.isFinite(amountPaid) ? amountPaid : undefined,
-      }
-
-      const timeout = createRequestTimeout(20000)
-      const response = await fetch("/api/admin/members/onboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: timeout.signal,
-      }).catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") {
-          throw new Error("Onboarding request timed out. Member may still have been created; please retry or check member list.")
-        }
-        throw error
-      }).finally(() => {
-        timeout.clear()
-      })
-
-      const data = (await response.json().catch(() => ({}))) as Partial<OnboardResponse> & { error?: string }
-
-      if (!response.ok && response.status !== 207) {
-        throw new Error(data.error ?? "Failed to onboard member")
-      }
-
-      const nextResult: OnboardResponse = {
-        memberId: data.memberId ?? "",
-        membershipId: data.membershipId ?? "",
-        qrCode: data.qrCode ?? "",
-        magicLink: data.magicLink ?? null,
-        redirectTo: typeof data.redirectTo === "string" ? data.redirectTo : undefined,
-        emailSent: data.emailSent,
-        emailError: data.emailError,
-      }
-
-      setResult(nextResult)
-      setStep("done")
-      onSuccess()
-
-      if (nextResult.qrCode) {
-        // Result QR is rendered in the done step.
-      }
-
-      if (nextResult.emailError) {
-        toast.warning("Member onboarded, but email delivery failed")
-      } else {
-        toast.success("Member onboarded successfully")
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown onboarding error"
-      setSubmitError(message)
-      toast.error(`Failed to onboard member: ${message}`)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  function copyText(text: string, successMessage: string) {
-    void (async () => {
-      try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text)
-        } else {
-          const input = document.createElement("textarea")
-          input.value = text
-          input.style.position = "fixed"
-          input.style.opacity = "0"
-          document.body.appendChild(input)
-          input.select()
-          document.execCommand("copy")
-          document.body.removeChild(input)
-        }
-        toast.success(successMessage)
-      } catch {
-        toast.error("Failed to copy text")
-      }
-    })()
-  }
-
-  const selectedPlanLabel = selectedPlan
-    ? `${selectedPlan.name} · ${selectedPlan.duration_days} days · ₱${selectedPlan.price.toLocaleString()}`
-    : ""
-
-  const steps: Step[] = ["details", "photo", "confirm", "done"]
-  const stepIndex = steps.indexOf(step)
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => {
-        void stopCamera()
-        onClose()
-        resetDraft()
-      }}
-      title="Onboard New Member"
-      width={760}
-    >
-      <div className="space-y-5">
-        <div className="flex items-center gap-2">
-          {steps.map((entry, index) => (
-            <div
-              key={entry}
-              className="flex h-2.5 flex-1 rounded-full"
-              style={{
-                backgroundColor: index <= stepIndex ? A.primary : A.border,
-              }}
-            />
-          ))}
-        </div>
-
-        {step === "details" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Member Name</label>
-                <input
-                  ref={nameInputRef}
-                  value={form.name}
-                  onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
-                  placeholder="Juan Dela Cruz"
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Email</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((current) => ({ ...current, email: e.target.value }))}
-                  placeholder="member@email.com"
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Membership Plan</label>
-                <select
-                  value={form.planId}
-                  onChange={(e) => setForm((current) => ({ ...current, planId: e.target.value }))}
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-                  disabled={loadingPlans}
-                >
-                  {loadingPlans ? (
-                    <option value="">Loading plans...</option>
-                  ) : plans.length === 0 ? (
-                    <option value="">No active plans available</option>
-                  ) : (
-                    plans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.name} · {plan.duration_days} days · ₱{plan.price.toLocaleString()}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Payment Method</label>
-                <ChoicePicker
-                  value={form.paymentMethod}
-                  onChange={(value) => setForm((current) => ({ ...current, paymentMethod: value }))}
-                  options={[
-                    { value: "cash", label: "Cash" },
-                    { value: "gcash", label: "GCash" },
-                  ]}
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Amount Paid (PHP)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.amountPaid}
-                  onChange={(e) => setForm((current) => ({ ...current, amountPaid: e.target.value }))}
-                  placeholder="0"
-                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2">
-              <GhostBtn onClick={onClose}>Cancel</GhostBtn>
-              <PrimaryBtn onClick={handleContinueFromDetails} disabled={loadingPlans || plans.length === 0}>
-                Continue
-              </PrimaryBtn>
-            </div>
-          </div>
-        )}
-
-        {step === "photo" && (
-          <div className="space-y-4">
-            <div className="rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium" style={{ color: A.text }}>Member Photo</p>
-                  <p className="text-xs" style={{ color: A.muted }}>Capture with camera or upload a photo. This will be stored in the member-avatars bucket.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
-                  style={{ color: A.primary, border: `1px solid ${A.border}` }}
-                >
-                  <Upload className="h-3 w-3" />
-                  Upload
-                </button>
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => void handleFileSelect(e.target.files?.[0] ?? null)}
-              />
-
-              <canvas ref={canvasRef} className="hidden" />
-
-              {photoDataUrl ? (
-                <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
-                  <img src={photoDataUrl} alt="Member preview" className="h-64 w-full object-cover" />
-                </div>
-              ) : cameraActive ? (
-                <div className="space-y-3">
-                  <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="h-64 w-full object-cover"
-                      style={{ transform: "scaleX(-1)" }}
-                    />
-                  </div>
-                  <p className="text-xs" style={{ color: A.muted }}>
-                    Camera preview is mirrored for easier framing.
-                  </p>
-                </div>
-              ) : (
-                <div
-                  className="flex h-40 items-center justify-center rounded-lg text-sm"
-                  style={{ border: `1px dashed ${A.border}`, color: A.muted }}
-                >
-                  Photo not selected yet
-                </div>
-              )}
-
-              {cameraError && (
-                <p className="mt-3 text-xs" style={{ color: "var(--color-danger)" }}>
-                  {cameraError}
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {!cameraActive && !photoDataUrl && (
-                  <PrimaryBtn onClick={() => void startCamera()}>
-                    <Camera className="h-4 w-4" />
-                    Camera
-                  </PrimaryBtn>
-                )}
-                {cameraActive && (
-                  <PrimaryBtn onClick={() => void capturePhoto()}>
-                    <Camera className="h-4 w-4" />
-                    Capture
-                  </PrimaryBtn>
-                )}
-                {photoDataUrl && (
-                  <GhostBtn onClick={clearPhoto}>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retake
-                  </GhostBtn>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <GhostBtn
-                  onClick={() => {
-                    void stopCamera()
-                    setStep("details")
-                  }}
-                >
-                  Back
-                </GhostBtn>
-                <PrimaryBtn disabled={!photoDataUrl} onClick={() => setStep("confirm") }>
-                  Continue
-                </PrimaryBtn>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === "confirm" && (
-          <div className="space-y-4">
-            <SummaryBox
-              rows={[
-                { label: "Name", value: form.name || "-" },
-                { label: "Email", value: form.email || "-" },
-                { label: "Plan", value: selectedPlanLabel || "-" },
-                { label: "Payment", value: form.paymentMethod === "cash" ? "Cash" : "GCash" },
-                { label: "Amount", value: `₱${Number(form.amountPaid || selectedPlan?.price || 0).toLocaleString()}` },
-              ]}
-            />
-
-            <div className="rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-sm font-medium" style={{ color: A.text }}>Photo Preview</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep("photo")
-                    if (!photoDataUrl) {
-                      void startCamera()
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
-                  style={{ color: A.primary, border: `1px solid ${A.border}` }}
-                >
-                  Change
-                </button>
-              </div>
-
-              {photoDataUrl ? (
-                <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
-                  <img src={photoDataUrl} alt="Member preview" className="h-64 w-full object-cover" />
-                </div>
-              ) : (
-                <div className="flex h-40 items-center justify-center rounded-lg text-sm" style={{ border: `1px dashed ${A.border}`, color: A.muted }}>
-                  No photo selected
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs" style={{ color: A.muted }}>
-              Required photo will be uploaded to the member-avatars bucket before the member record is created.
-            </p>
-            <p className="text-xs" style={{ color: A.muted }}>
-              After saving, you will be able to onboard another member immediately.
-            </p>
-
-            {submitError && (
-              <p className="text-xs" style={{ color: "var(--color-danger)" }}>
-                {submitError}
-              </p>
-            )}
-
-            <div className="flex items-center justify-end gap-2">
-              <GhostBtn onClick={() => setStep("photo")}>Back</GhostBtn>
-              <PrimaryBtn onClick={() => void handleSaveMember()} disabled={submitting}>
-                {submitting ? "Creating..." : "Create Member"}
-              </PrimaryBtn>
-            </div>
-          </div>
-        )}
-
-        {step === "done" && result && (
-          <div className="space-y-4 rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" style={{ color: A.primary }} />
-              <p className="text-sm font-semibold" style={{ color: A.text }}>Member Onboarded</p>
-            </div>
-
-            {resultQrDataUrl ? (
-              <div className="rounded-lg bg-white p-3 inline-block">
-                <img src={resultQrDataUrl} alt="Member QR code" className="h-44 w-44" />
-              </div>
-            ) : (
-              <p className="text-xs" style={{ color: A.muted }}>QR preview not available.</p>
-            )}
-
-            <SummaryBox
-              rows={[
-                { label: "Member ID", value: result.memberId || "-" },
-                { label: "Membership ID", value: result.membershipId || "-" },
-                { label: "Email Delivery", value: result.emailError ? "Failed (manual share needed)" : "Sent" },
-              ]}
-            />
-
-            {result.emailError && (
-              <p className="text-xs" style={{ color: "var(--admin-expired-text)" }}>
-                {result.emailError}
-              </p>
-            )}
-
-            {result.magicLink && (
-              <div>
-                <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link (fallback copy)</p>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={result.magicLink}
-                    className="w-full rounded-lg px-3 py-2 text-xs outline-none"
-                    style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => copyText(result.magicLink ?? "", "Magic link copied")}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-2 text-xs font-medium"
-                    style={{ color: A.primary, border: `1px solid ${A.border}` }}
-                  >
-                    <Copy className="h-3 w-3" />
-                    Copy
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {result.redirectTo && (
-              <div>
-                <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link Redirect Target</p>
-                <input
-                  readOnly
-                  value={result.redirectTo}
-                  className="w-full rounded-lg px-3 py-2 text-xs outline-none"
-                  style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <GhostBtn
-                onClick={() => {
-                  resetDraft()
-                  void loadPlans()
-                  onClose()
-                }}
-              >
-                Close
-              </GhostBtn>
-              <PrimaryBtn
-                onClick={() => {
-                  resetDraft()
-                  void loadPlans()
-                  setTimeout(() => nameInputRef.current?.focus(), 0)
-                  setStep("details")
-                }}
-                size="sm"
-              >
-                Onboard Another
-              </PrimaryBtn>
-            </div>
-          </div>
-        )}
-
-        {cameraActive && (
-          <canvas ref={canvasRef} className="hidden" />
-        )}
-      </div>
-    </Modal>
-  )
-}
 </file>
 
 <file path="database.types.ts">
@@ -4445,6 +3493,130 @@ export async function GET(_request: NextRequest) {
 }
 </file>
 
+<file path="app/api/member/avatar/route.ts">
+import { NextResponse } from "next/server"
+import { createAdminClient } from "@/lib/supabase-admin"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
+
+interface AvatarCooldownResult {
+  updated?: boolean
+  nextAllowedAt?: string | null
+  next_allowed_at?: string | null
+  message?: string | null
+}
+
+const AVATAR_BUCKET_CANDIDATES = ["member-avatars", "gym-assets"] as const
+
+function isBucketNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
+  const maybeCode = "statusCode" in error ? String((error as { statusCode?: unknown }).statusCode ?? "") : ""
+  return maybeCode === "404" || /bucket not found/i.test(maybeMessage)
+}
+
+function parseDataUrl(dataUrl: string): { contentType: string; buffer: Buffer } {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) {
+    throw new Error("Invalid avatar image payload.")
+  }
+
+  return {
+    contentType: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  }
+}
+
+function buildAvatarPath(userId: string): string {
+  const random = Math.random().toString(36).slice(2)
+  return `avatars/${userId}/${Date.now()}-${random}.jpg`
+}
+
+export async function POST(request: Request) {
+  const supabase = await createServerSupabaseClient()
+  const admin = createAdminClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+
+  let body: { avatarUrl?: string; avatarDataUrl?: string }
+  try {
+    body = (await request.json()) as { avatarUrl?: string; avatarDataUrl?: string }
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload." }, { status: 400 })
+  }
+
+  const avatarDataUrl = typeof body.avatarDataUrl === "string" ? body.avatarDataUrl.trim() : ""
+  const avatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : ""
+
+  let publicUrl = avatarUrl
+  let uploadedPath: string | null = null
+
+  if (avatarDataUrl) {
+    const { contentType, buffer } = parseDataUrl(avatarDataUrl)
+    const uploadPath = buildAvatarPath(user.id)
+
+    for (const bucket of AVATAR_BUCKET_CANDIDATES) {
+      const { error: uploadError } = await admin.storage.from(bucket).upload(uploadPath, buffer, {
+        upsert: true,
+        contentType,
+      })
+
+      if (!uploadError) {
+        uploadedPath = uploadPath
+        publicUrl = admin.storage.from(bucket).getPublicUrl(uploadPath).data.publicUrl
+        break
+      }
+
+      if (!isBucketNotFoundError(uploadError)) {
+        return NextResponse.json({ error: uploadError.message }, { status: 400 })
+      }
+    }
+
+    if (!publicUrl) {
+      return NextResponse.json({ error: "Avatar storage bucket is missing. Please create member-avatars or gym-assets." }, { status: 500 })
+    }
+  }
+
+  const { data, error } = await (supabase as any).rpc('set_member_avatar_with_cooldown', {
+    p_member_id: user.id,
+    p_avatar_url: publicUrl,
+    p_lock_days: 14,
+  });
+
+  if (error) {
+    console.error("RPC Error:", error.message);
+  } else {
+    console.log("Success:", data);
+  }
+
+  if (error) {
+    if (uploadedPath) {
+      for (const bucket of AVATAR_BUCKET_CANDIDATES) {
+        void admin.storage.from(bucket).remove([uploadedPath])
+      }
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
+
+  const payload = Array.isArray(data) ? (data[0] as AvatarCooldownResult | undefined) : (data as AvatarCooldownResult | null)
+  const updated = typeof payload?.updated === "boolean" ? payload.updated : true
+  const nextAllowedAt = payload?.nextAllowedAt ?? payload?.next_allowed_at ?? null
+  const message = payload?.message ?? (updated ? "Avatar updated successfully." : "Avatar change is on cooldown.")
+
+  return NextResponse.json({
+    updated,
+    nextAllowedAt,
+    message,
+    avatarUrl: publicUrl,
+  })
+}
+</file>
+
 <file path="app/gym/[code]/locate/page.tsx">
 import { notFound } from 'next/navigation';
 import { MapPin } from 'lucide-react';
@@ -5091,6 +4263,838 @@ function summary(results) {
 }
 
 main().catch(console.error)
+</file>
+
+<file path="components/admin/OnboardMemberModal.tsx">
+"use client"
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import QRCode from "qrcode"
+import { toast } from "sonner"
+import { Camera, CheckCircle2, Copy, RotateCcw, Upload } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
+import { createClient } from "@/lib/supabase"
+import { A, ChoicePicker, GhostBtn, Modal, PrimaryBtn, SummaryBox } from "@/lib/admin-ui"
+
+interface PlanOption {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+}
+
+interface OnboardResponse {
+  memberId: string
+  membershipId: string
+  qrCode: string
+  magicLink: string | null
+  redirectTo?: string
+  emailSent?: boolean
+  emailError?: string
+}
+
+type Step = "details" | "photo" | "confirm" | "done"
+
+type FormState = {
+  name: string
+  email: string
+  planId: string
+  paymentMethod: "cash" | "gcash"
+  amountPaid: string
+}
+
+const INITIAL_FORM: FormState = {
+  name: "",
+  email: "",
+  planId: "",
+  paymentMethod: "cash",
+  amountPaid: "",
+}
+
+const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
+const AVATAR_BUCKET_CANDIDATES = ["member-avatars", "gym-assets"] as const
+
+interface Props {
+  open: boolean
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function buildOnboardPhotoPath() {
+  const random = Math.random().toString(36).slice(2)
+  return `avatars/${Date.now()}-${random}.jpg`
+}
+
+function blobFromDataUrl(dataUrl: string): Promise<Blob> {
+  return fetch(dataUrl).then((response) => response.blob())
+}
+
+function createRequestTimeout(timeoutMs: number) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  return {
+    signal: controller.signal,
+    clear: () => window.clearTimeout(timer),
+  }
+}
+
+function isBucketNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message ?? "") : ""
+  const maybeCode = "statusCode" in error ? String((error as { statusCode?: unknown }).statusCode ?? "") : ""
+  return maybeCode === "404" || /bucket not found/i.test(maybeMessage)
+}
+
+export function OnboardMemberModal({ open, onClose, onSuccess }: Props) {
+  const { profile } = useAuth()
+  const supabase = useMemo(() => createClient(), [])
+  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const objectUrlRef = useRef<string | null>(null)
+
+  const [step, setStep] = useState<Step>("details")
+  const [plans, setPlans] = useState<PlanOption[]>([])
+  const [loadingPlans, setLoadingPlans] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [form, setForm] = useState<FormState>(INITIAL_FORM)
+  const [photoDataUrl, setPhotoDataUrl] = useState("")
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraError, setCameraError] = useState("")
+  const [result, setResult] = useState<OnboardResponse | null>(null)
+  const [resultQrDataUrl, setResultQrDataUrl] = useState("")
+  const [submitError, setSubmitError] = useState("")
+
+  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === form.planId) ?? null, [form.planId, plans])
+
+  const resetDraft = useCallback(() => {
+    setStep("details")
+    setPlans([])
+    setLoadingPlans(false)
+    setSubmitting(false)
+    setForm(INITIAL_FORM)
+    setPhotoDataUrl("")
+    setCameraActive(false)
+    setCameraError("")
+    setResult(null)
+    setResultQrDataUrl("")
+    setSubmitError("")
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }, [])
+
+  const stopCamera = useCallback(async () => {
+    const stream = streamRef.current
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+
+    setCameraActive(false)
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+  }, [])
+
+  const loadPlans = useCallback(async () => {
+    if (!profile?.gymId) return
+
+    setLoadingPlans(true)
+    try {
+      const { data, error } = await supabase
+        .from("membership_plans")
+        .select("id, name, price, duration_days")
+        .eq("gym_id", profile.gymId)
+        .eq("is_active", true)
+        .order("price")
+
+      if (error) {
+        throw error
+      }
+
+      const nextPlans = (data ?? []) as PlanOption[]
+      setPlans(nextPlans)
+      setForm((current) => ({
+        ...current,
+        planId: current.planId || nextPlans[0]?.id || "",
+        amountPaid: current.amountPaid || (nextPlans[0] ? String(nextPlans[0].price) : ""),
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load plans"
+      toast.error(message)
+    } finally {
+      setLoadingPlans(false)
+    }
+  }, [profile?.gymId, supabase])
+
+  useEffect(() => {
+    if (!open) {
+      void stopCamera()
+      resetDraft()
+      return
+    }
+
+    setStep("details")
+    void loadPlans()
+    setTimeout(() => nameInputRef.current?.focus(), 0)
+
+    return () => {
+      void stopCamera()
+    }
+  }, [loadPlans, open, resetDraft, stopCamera])
+
+  useEffect(() => {
+    if (!result?.qrCode) {
+      setResultQrDataUrl("")
+      return
+    }
+
+    let active = true
+    void QRCode.toDataURL(result.qrCode, {
+      width: 220,
+      margin: 2,
+      color: { dark: "#2C2C2C", light: "#FFFFFF" },
+    }).then((dataUrl) => {
+      if (active) setResultQrDataUrl(dataUrl)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [result?.qrCode])
+
+  useEffect(() => {
+    return () => {
+      void stopCamera()
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current)
+        objectUrlRef.current = null
+      }
+    }
+  }, [stopCamera])
+
+  async function startCamera() {
+    if (cameraActive) return
+
+    setCameraError("")
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+      setCameraActive(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to access camera"
+      setCameraError(message)
+      toast.error(message)
+    }
+  }
+
+  async function capturePhoto() {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+
+    const width = video.videoWidth || 1280
+    const height = video.videoHeight || 720
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext("2d")
+    if (!context) return
+
+    context.drawImage(video, 0, 0, width, height)
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
+    setPhotoDataUrl(dataUrl)
+    await stopCamera()
+    setStep("confirm")
+  }
+
+  async function handleFileSelect(file: File | null) {
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file")
+      return
+    }
+
+    if (file.size > MAX_PHOTO_SIZE_BYTES) {
+      toast.error("Photo must be 5MB or smaller")
+      return
+    }
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current)
+      objectUrlRef.current = null
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? "")
+      setPhotoDataUrl(dataUrl)
+      setStep("confirm")
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function clearPhoto() {
+    setPhotoDataUrl("")
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  async function uploadPhoto(dataUrl: string) {
+    if (!profile?.gymId) {
+      throw new Error("Missing gym context")
+    }
+
+    const blob = await blobFromDataUrl(dataUrl)
+    const path = `${profile.gymId}/${buildOnboardPhotoPath()}`
+    let selectedBucket: (typeof AVATAR_BUCKET_CANDIDATES)[number] | null = null
+
+    for (const bucket of AVATAR_BUCKET_CANDIDATES) {
+      const uploadResult = await supabase.storage.from(bucket).upload(path, blob, {
+        upsert: true,
+        contentType: "image/jpeg",
+      })
+
+      if (!uploadResult.error) {
+        selectedBucket = bucket
+        break
+      }
+
+      if (!isBucketNotFoundError(uploadResult.error)) {
+        throw new Error(uploadResult.error.message)
+      }
+    }
+
+    if (!selectedBucket) {
+      throw new Error("Avatar storage bucket is missing. Please create member-avatars or gym-assets.")
+    }
+
+    const { data } = supabase.storage.from(selectedBucket).getPublicUrl(path)
+    return `${data.publicUrl}?t=${Date.now()}`
+  }
+
+  async function handleContinueFromDetails() {
+    const trimmedName = form.name.trim()
+    const trimmedEmail = form.email.trim().toLowerCase()
+
+    if (trimmedName.length < 2) {
+      toast.error("Member name must be at least 2 characters")
+      return
+    }
+
+    if (!trimmedEmail) {
+      toast.error("Email is required")
+      return
+    }
+
+    if (!form.planId) {
+      toast.error("Please select a membership plan")
+      return
+    }
+
+    setForm((current) => ({ ...current, name: trimmedName, email: trimmedEmail }))
+    setStep("photo")
+  }
+
+  async function handleSaveMember() {
+    const trimmedName = form.name.trim()
+    const trimmedEmail = form.email.trim().toLowerCase()
+
+    if (!trimmedName || !trimmedEmail || !form.planId) {
+      toast.error("Please complete the member details first")
+      setStep("details")
+      return
+    }
+
+    if (!photoDataUrl) {
+      toast.error("A member photo is required")
+      setStep("photo")
+      return
+    }
+
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      const avatarUrl = await uploadPhoto(photoDataUrl)
+      const amountPaid = Number(form.amountPaid)
+      const payload = {
+        name: trimmedName,
+        email: trimmedEmail,
+        avatarUrl,
+        planId: form.planId,
+        paymentMethod: form.paymentMethod,
+        amountPaid: Number.isFinite(amountPaid) ? amountPaid : undefined,
+      }
+
+      const timeout = createRequestTimeout(20000)
+      const response = await fetch("/api/admin/members/onboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: timeout.signal,
+      }).catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error("Onboarding request timed out. Member may still have been created; please retry or check member list.")
+        }
+        throw error
+      }).finally(() => {
+        timeout.clear()
+      })
+
+      const data = (await response.json().catch(() => ({}))) as Partial<OnboardResponse> & { error?: string }
+
+      if (!response.ok && response.status !== 207) {
+        throw new Error(data.error ?? "Failed to onboard member")
+      }
+
+      const nextResult: OnboardResponse = {
+        memberId: data.memberId ?? "",
+        membershipId: data.membershipId ?? "",
+        qrCode: data.qrCode ?? "",
+        magicLink: data.magicLink ?? null,
+        redirectTo: typeof data.redirectTo === "string" ? data.redirectTo : undefined,
+        emailSent: data.emailSent,
+        emailError: data.emailError,
+      }
+
+      setResult(nextResult)
+      setStep("done")
+      onSuccess()
+
+      if (nextResult.qrCode) {
+        // Result QR is rendered in the done step.
+      }
+
+      if (nextResult.emailError) {
+        toast.warning("Member onboarded, but email delivery failed")
+      } else {
+        toast.success("Member onboarded successfully")
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown onboarding error"
+      setSubmitError(message)
+      toast.error(`Failed to onboard member: ${message}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function copyText(text: string, successMessage: string) {
+    void (async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text)
+        } else {
+          const input = document.createElement("textarea")
+          input.value = text
+          input.style.position = "fixed"
+          input.style.opacity = "0"
+          document.body.appendChild(input)
+          input.select()
+          document.execCommand("copy")
+          document.body.removeChild(input)
+        }
+        toast.success(successMessage)
+      } catch {
+        toast.error("Failed to copy text")
+      }
+    })()
+  }
+
+  const selectedPlanLabel = selectedPlan
+    ? `${selectedPlan.name} · ${selectedPlan.duration_days} days · ₱${selectedPlan.price.toLocaleString()}`
+    : ""
+
+  const steps: Step[] = ["details", "photo", "confirm", "done"]
+  const stepIndex = steps.indexOf(step)
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => {
+        void stopCamera()
+        onClose()
+        resetDraft()
+      }}
+      title="Onboard New Member"
+      width={760}
+    >
+      <div className="space-y-5">
+        <div className="flex items-center gap-2">
+          {steps.map((entry, index) => (
+            <div
+              key={entry}
+              className="flex h-2.5 flex-1 rounded-full"
+              style={{
+                backgroundColor: index <= stepIndex ? A.primary : A.border,
+              }}
+            />
+          ))}
+        </div>
+
+        {step === "details" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Member Name</label>
+                <input
+                  ref={nameInputRef}
+                  value={form.name}
+                  onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+                  placeholder="Juan Dela Cruz"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Email</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((current) => ({ ...current, email: e.target.value }))}
+                  placeholder="member@email.com"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Membership Plan</label>
+                <select
+                  value={form.planId}
+                  onChange={(e) => setForm((current) => ({ ...current, planId: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+                  disabled={loadingPlans}
+                >
+                  {loadingPlans ? (
+                    <option value="">Loading plans...</option>
+                  ) : plans.length === 0 ? (
+                    <option value="">No active plans available</option>
+                  ) : (
+                    plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.name} · {plan.duration_days} days · ₱{plan.price.toLocaleString()}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Payment Method</label>
+                <ChoicePicker
+                  value={form.paymentMethod}
+                  onChange={(value) => setForm((current) => ({ ...current, paymentMethod: value }))}
+                  options={[
+                    { value: "cash", label: "Cash" },
+                    { value: "gcash", label: "GCash" },
+                  ]}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-xs font-medium" style={{ color: A.muted }}>Amount Paid (PHP)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.amountPaid}
+                  onChange={(e) => setForm((current) => ({ ...current, amountPaid: e.target.value }))}
+                  placeholder="0"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <GhostBtn onClick={onClose}>Cancel</GhostBtn>
+              <PrimaryBtn onClick={handleContinueFromDetails} disabled={loadingPlans || plans.length === 0}>
+                Continue
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {step === "photo" && (
+          <div className="space-y-4">
+            <div className="rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium" style={{ color: A.text }}>Member Photo</p>
+                  <p className="text-xs" style={{ color: A.muted }}>Capture with camera or upload a photo. This will be stored in the member-avatars bucket.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
+                  style={{ color: A.primary, border: `1px solid ${A.border}` }}
+                >
+                  <Upload className="h-3 w-3" />
+                  Upload
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void handleFileSelect(e.target.files?.[0] ?? null)}
+              />
+
+              <canvas ref={canvasRef} className="hidden" />
+
+              {photoDataUrl ? (
+                <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
+                  <img src={photoDataUrl} alt="Member preview" className="h-64 w-full object-cover" />
+                </div>
+              ) : cameraActive ? (
+                <div className="space-y-3">
+                  <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="h-64 w-full object-cover"
+                      style={{ transform: "scaleX(-1)" }}
+                    />
+                  </div>
+                  <p className="text-xs" style={{ color: A.muted }}>
+                    Camera preview is mirrored for easier framing.
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className="flex h-40 items-center justify-center rounded-lg text-sm"
+                  style={{ border: `1px dashed ${A.border}`, color: A.muted }}
+                >
+                  Photo not selected yet
+                </div>
+              )}
+
+              {cameraError && (
+                <p className="mt-3 text-xs" style={{ color: "var(--color-danger)" }}>
+                  {cameraError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {!cameraActive && !photoDataUrl && (
+                  <PrimaryBtn onClick={() => void startCamera()}>
+                    <Camera className="h-4 w-4" />
+                    Camera
+                  </PrimaryBtn>
+                )}
+                {cameraActive && (
+                  <PrimaryBtn onClick={() => void capturePhoto()}>
+                    <Camera className="h-4 w-4" />
+                    Capture
+                  </PrimaryBtn>
+                )}
+                {photoDataUrl && (
+                  <GhostBtn onClick={clearPhoto}>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Retake
+                  </GhostBtn>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <GhostBtn
+                  onClick={() => {
+                    void stopCamera()
+                    setStep("details")
+                  }}
+                >
+                  Back
+                </GhostBtn>
+                <PrimaryBtn disabled={!photoDataUrl} onClick={() => setStep("confirm") }>
+                  Continue
+                </PrimaryBtn>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === "confirm" && (
+          <div className="space-y-4">
+            <SummaryBox
+              rows={[
+                { label: "Name", value: form.name || "-" },
+                { label: "Email", value: form.email || "-" },
+                { label: "Plan", value: selectedPlanLabel || "-" },
+                { label: "Payment", value: form.paymentMethod === "cash" ? "Cash" : "GCash" },
+                { label: "Amount", value: `₱${Number(form.amountPaid || selectedPlan?.price || 0).toLocaleString()}` },
+              ]}
+            />
+
+            <div className="rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium" style={{ color: A.text }}>Photo Preview</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("photo")
+                    if (!photoDataUrl) {
+                      void startCamera()
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
+                  style={{ color: A.primary, border: `1px solid ${A.border}` }}
+                >
+                  Change
+                </button>
+              </div>
+
+              {photoDataUrl ? (
+                <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${A.border}` }}>
+                  <img src={photoDataUrl} alt="Member preview" className="h-64 w-full object-cover" />
+                </div>
+              ) : (
+                <div className="flex h-40 items-center justify-center rounded-lg text-sm" style={{ border: `1px dashed ${A.border}`, color: A.muted }}>
+                  No photo selected
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs" style={{ color: A.muted }}>
+              Required photo will be uploaded to the member-avatars bucket before the member record is created.
+            </p>
+            <p className="text-xs" style={{ color: A.muted }}>
+              After saving, you will be able to onboard another member immediately.
+            </p>
+
+            {submitError && (
+              <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+                {submitError}
+              </p>
+            )}
+
+            <div className="flex items-center justify-end gap-2">
+              <GhostBtn onClick={() => setStep("photo")}>Back</GhostBtn>
+              <PrimaryBtn onClick={() => void handleSaveMember()} disabled={submitting}>
+                {submitting ? "Creating..." : "Create Member"}
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {step === "done" && result && (
+          <div className="space-y-4 rounded-xl p-4" style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" style={{ color: A.primary }} />
+              <p className="text-sm font-semibold" style={{ color: A.text }}>Member Onboarded</p>
+            </div>
+
+            {resultQrDataUrl ? (
+              <div className="rounded-lg bg-white p-3 inline-block">
+                <img src={resultQrDataUrl} alt="Member QR code" className="h-44 w-44" />
+              </div>
+            ) : (
+              <p className="text-xs" style={{ color: A.muted }}>QR preview not available.</p>
+            )}
+
+            <SummaryBox
+              rows={[
+                { label: "Member ID", value: result.memberId || "-" },
+                { label: "Membership ID", value: result.membershipId || "-" },
+                { label: "Email Delivery", value: result.emailError ? "Failed (manual share needed)" : "Sent" },
+              ]}
+            />
+
+            {result.emailError && (
+              <p className="text-xs" style={{ color: "var(--admin-expired-text)" }}>
+                {result.emailError}
+              </p>
+            )}
+
+            {result.magicLink && (
+              <div>
+                <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link (fallback copy)</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={result.magicLink}
+                    className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+                    style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => copyText(result.magicLink ?? "", "Magic link copied")}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-2 text-xs font-medium"
+                    style={{ color: A.primary, border: `1px solid ${A.border}` }}
+                  >
+                    <Copy className="h-3 w-3" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {result.redirectTo && (
+              <div>
+                <p className="mb-1 text-xs font-medium" style={{ color: A.muted }}>Magic Link Redirect Target</p>
+                <input
+                  readOnly
+                  value={result.redirectTo}
+                  className="w-full rounded-lg px-3 py-2 text-xs outline-none"
+                  style={{ backgroundColor: "#fff", border: `1px solid ${A.border}`, color: A.text }}
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <GhostBtn
+                onClick={() => {
+                  resetDraft()
+                  void loadPlans()
+                  onClose()
+                }}
+              >
+                Close
+              </GhostBtn>
+              <PrimaryBtn
+                onClick={() => {
+                  resetDraft()
+                  void loadPlans()
+                  setTimeout(() => nameInputRef.current?.focus(), 0)
+                  setStep("details")
+                }}
+                size="sm"
+              >
+                Onboard Another
+              </PrimaryBtn>
+            </div>
+          </div>
+        )}
+
+        {cameraActive && (
+          <canvas ref={canvasRef} className="hidden" />
+        )}
+      </div>
+    </Modal>
+  )
+}
 </file>
 
 <file path="components/cta-section.tsx">
@@ -8845,389 +8849,6 @@ jobs:
       - name: Check response
         if: failure()
         run: echo "Notification job failed - check GitHub Actions logs"
-</file>
-
-<file path="app/api/admin/members/onboard/route.ts">
-/**
- * app/api/admin/members/onboard/route.ts
- *
- * Changes from previous version:
- *  1. Fetches gym name so the email template can greet with the real gym name.
- *  2. Calls sendOnboardingEmail() after generating the magic link.
- *  3. Sets sent_via to 'email' on success, 'preview' on email failure.
- *  4. Email failure is non-fatal: member + membership are still created and
- *     the API returns 207 with an emailError field so the UI can show a warning.
- */
-
-import { NextResponse } from "next/server"
-import { z } from "zod"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { createAdminClient } from "@/lib/supabase-admin"
-import { sendOnboardingEmail, type SendResult } from "@/lib/email"
-
-type ManagerRole = "owner" | "admin" | "staff"
-const MANAGER_ROLES: ManagerRole[] = ["owner", "admin", "staff"]
-
-const onboardSchema = z.object({
-  name: z.string().trim().min(2).max(100),
-  email: z.string().trim().toLowerCase().email(),
-  avatarUrl: z.string().trim().url(),
-  planId: z.string().uuid(),
-  paymentMethod: z.enum(["cash", "gcash"]),
-  amountPaid: z.number().nonnegative().optional(),
-  startDate: z.string().date().optional(),
-})
-
-function computeEndDate(startDate: string, durationDays: number): string {
-  const dt = new Date(`${startDate}T00:00:00.000Z`)
-  dt.setUTCDate(dt.getUTCDate() + durationDays)
-  return dt.toISOString().slice(0, 10)
-}
-
-function getSiteUrl(request: Request): string {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim()
-  if (envUrl) return envUrl.replace(/\/$/, "")
-
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host")
-  const proto = request.headers.get("x-forwarded-proto") || "http"
-  if (host) return `${proto}://${host}`.replace(/\/$/, "")
-
-  return "http://localhost:3000"
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms)
-    promise
-      .then((value) => {
-        clearTimeout(timer)
-        resolve(value)
-      })
-      .catch(() => {
-        clearTimeout(timer)
-        resolve(fallback)
-      })
-  })
-}
-
-async function getCurrentUserWithRole() {
-  const supabase = await createServerSupabaseClient()
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return { supabase, user: null, profile: null as null }
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, role, gym_id")
-    .eq("id", user.id)
-    .maybeSingle()
-
-  return { supabase, user, profile }
-}
-
-export async function POST(request: Request) {
-  const { supabase, user, profile } = await getCurrentUserWithRole()
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
-  }
-
-  if (
-    !profile?.role ||
-    !MANAGER_ROLES.includes(profile.role as ManagerRole) ||
-    !profile.gym_id
-  ) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403 })
-  }
-
-  let body: z.infer<typeof onboardSchema>
-  try {
-    const parsed = onboardSchema.safeParse(await request.json())
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request body.", issues: parsed.error.issues },
-        { status: 400 },
-      )
-    }
-    body = parsed.data
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON payload." },
-      { status: 400 },
-    )
-  }
-
-  const admin = createAdminClient()
-
-  // Fetch plan and gym name in parallel.
-  const [planResult, gymResult] = await Promise.all([
-    supabase
-      .from("membership_plans")
-      .select("id, duration_days, price, is_active")
-      .eq("id", body.planId)
-      .eq("gym_id", profile.gym_id)
-      .maybeSingle(),
-    supabase
-      .from("gyms")
-      .select("name")
-      .eq("id", profile.gym_id)
-      .maybeSingle(),
-  ])
-
-  if (planResult.error || !planResult.data || !planResult.data.is_active) {
-    return NextResponse.json(
-      { error: "Membership plan is invalid or inactive." },
-      { status: 400 },
-    )
-  }
-
-  const plan = planResult.data
-  // Fall back gracefully if gym name can't be fetched.
-  const gymName = gymResult.data?.name ?? "Your Gym"
-
-  // -------------------------------------------------------------------------
-  // Resolve member identity — onboarding requires a new unique email.
-  // Existing members should use the renew/status flows instead.
-  // -------------------------------------------------------------------------
-
-  const { data: existingProfile } = await supabase
-    .from("profiles")
-    .select("id, gym_id, name")
-    .eq("email", body.email)
-    .maybeSingle()
-
-  if (existingProfile) {
-    // Already belongs to a different gym — hard block
-    if (existingProfile.gym_id && existingProfile.gym_id !== profile.gym_id) {
-      return NextResponse.json(
-        { error: "This email is already assigned to another gym." },
-        { status: 409 },
-      )
-    }
-
-    // Already a member of THIS gym — tell staff to use Renew
-    if (existingProfile.gym_id === profile.gym_id) {
-      return NextResponse.json(
-        { error: `${existingProfile.name ?? "This person"} is already a member here. Use Renew instead.` },
-        { status: 409 },
-      )
-    }
-  }
-  const { data: createdAuth, error: createAuthError } =
-    await admin.auth.admin.createUser({
-      email: body.email,
-      email_confirm: true,
-      user_metadata: {
-        name: body.name,
-        role: "member",
-      },
-    })
-
-  if (createAuthError || !createdAuth.user) {
-    return NextResponse.json(
-      {
-        error:
-          createAuthError?.message ?? "Failed to create auth user.",
-      },
-      { status: 400 },
-    )
-  }
-
-  const memberId: string = createdAuth.user.id
-
-  // -------------------------------------------------------------------------
-  // Upsert profile
-  // -------------------------------------------------------------------------
-
-  const qrPayload = `stren://checkin/${profile.gym_id}/${memberId}`
-
-  const { error: profileUpsertError } = await supabase
-    .from("profiles")
-    .upsert(
-      {
-        id: memberId,
-        email: body.email,
-        name: body.name,
-        role: "member",
-        status: "active",
-        gym_id: profile.gym_id,
-        avatar_url: body.avatarUrl,
-        qr_code: qrPayload,
-      },
-      { onConflict: "id" },
-    )
-
-  if (profileUpsertError) {
-    return NextResponse.json(
-      {
-        error: `Failed to upsert profile: ${profileUpsertError.message}`,
-      },
-      { status: 400 },
-    )
-  }
-
-  // -------------------------------------------------------------------------
-  // Expire old memberships and create new one
-  // -------------------------------------------------------------------------
-
-  const startDate = body.startDate ?? new Date().toISOString().slice(0, 10)
-  const endDate = computeEndDate(startDate, plan.duration_days)
-
-  const { error: expireError } = await supabase
-    .from("memberships")
-    .update({ status: "expired" })
-    .eq("member_id", memberId)
-    .eq("gym_id", profile.gym_id)
-    .eq("status", "active")
-
-  if (expireError) {
-    return NextResponse.json(
-      {
-        error: `Failed to expire previous active memberships: ${expireError.message}`,
-      },
-      { status: 400 },
-    )
-  }
-
-  const { data: createdMembership, error: membershipError } = await supabase
-    .from("memberships")
-    .insert({
-      member_id: memberId,
-      plan_id: plan.id,
-      gym_id: profile.gym_id,
-      start_date: startDate,
-      end_date: endDate,
-      status: "active",
-      payment_method: body.paymentMethod,
-      amount_paid: body.amountPaid ?? plan.price,
-    })
-    .select("id")
-    .maybeSingle()
-
-  if (membershipError || !createdMembership) {
-    return NextResponse.json(
-      {
-        error:
-          membershipError?.message ?? "Failed to create membership.",
-      },
-      { status: 400 },
-    )
-  }
-
-  // -------------------------------------------------------------------------
-  // Generate magic link
-  // -------------------------------------------------------------------------
-
-  const siteUrl = getSiteUrl(request)
-  const redirectTo = `${siteUrl}/auth/callback`
-
-  const { data: linkData, error: linkError } =
-    await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email: body.email,
-      options: {
-        redirectTo,
-        data: { role: "member" },
-      },
-    })
-
-  if (linkError || !linkData.properties?.action_link) {
-    // Member and membership exist — return partial success.
-    await admin.from("member_onboarding_events").insert({
-      member_id: memberId,
-      gym_id: profile.gym_id,
-      created_by: user.id,
-      email: body.email,
-      magic_link_url: null,
-      qr_code: qrPayload,
-      sent_via: "preview",
-    })
-
-    return NextResponse.json(
-      {
-        memberId,
-        membershipId: createdMembership.id,
-        qrCode: qrPayload,
-        magicLink: null,
-        redirectTo,
-        emailError:
-          linkError?.message ??
-          "Magic link generation failed; member was created successfully.",
-      },
-      { status: 207 },
-    )
-  }
-
-  const magicLink = linkData.properties.action_link
-
-  // -------------------------------------------------------------------------
-  // Send email
-  // -------------------------------------------------------------------------
-
-  const emailTimeoutResult: SendResult = {
-    ok: false,
-    error: "Email send timed out. Share the magic link manually.",
-  }
-
-  const emailResult = await withTimeout(
-    sendOnboardingEmail({
-      to: body.email,
-      memberName: body.name,
-      gymName,
-      qrPayload,
-      magicLink,
-    }),
-    15000,
-    emailTimeoutResult,
-  )
-
-  // Log the onboarding event regardless of email outcome.
-  await admin.from("member_onboarding_events").insert({
-    member_id: memberId,
-    gym_id: profile.gym_id,
-    created_by: user.id,
-    email: body.email,
-    magic_link_url: magicLink,
-    qr_code: qrPayload,
-    // Record whether the email actually went out.
-    sent_via: emailResult.ok ? "email" : "preview",
-  })
-
-  if (!emailResult.ok) {
-    // Non-fatal: member is created, but staff should know to share the link manually.
-    return NextResponse.json(
-      {
-        memberId,
-        membershipId: createdMembership.id,
-        qrCode: qrPayload,
-        magicLink,
-        redirectTo,
-        emailError: `Member created but email failed to send: ${emailResult.error}. Share the magic link above manually.`,
-      },
-      { status: 207 },
-    )
-  }
-
-  // -------------------------------------------------------------------------
-  // Full success
-  // -------------------------------------------------------------------------
-
-  return NextResponse.json({
-    memberId,
-    membershipId: createdMembership.id,
-    qrCode: qrPayload,
-    magicLink,
-    redirectTo,
-    emailSent: true,
-  })
-}
 </file>
 
 <file path="app/auth/callback/route.ts">
@@ -18427,6 +18048,389 @@ export default function PromosPage() {
 }
 </file>
 
+<file path="app/api/admin/members/onboard/route.ts">
+/**
+ * app/api/admin/members/onboard/route.ts
+ *
+ * Changes from previous version:
+ *  1. Fetches gym name so the email template can greet with the real gym name.
+ *  2. Calls sendOnboardingEmail() after generating the magic link.
+ *  3. Sets sent_via to 'email' on success, 'preview' on email failure.
+ *  4. Email failure is non-fatal: member + membership are still created and
+ *     the API returns 207 with an emailError field so the UI can show a warning.
+ */
+
+import { NextResponse } from "next/server"
+import { z } from "zod"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { createAdminClient } from "@/lib/supabase-admin"
+import { sendOnboardingEmail, type SendResult } from "@/lib/email"
+
+type ManagerRole = "owner" | "admin" | "staff"
+const MANAGER_ROLES: ManagerRole[] = ["owner", "admin", "staff"]
+
+const onboardSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().trim().toLowerCase().email(),
+  avatarUrl: z.string().trim().url(),
+  planId: z.string().uuid(),
+  paymentMethod: z.enum(["cash", "gcash"]),
+  amountPaid: z.number().nonnegative().optional(),
+  startDate: z.string().date().optional(),
+})
+
+function computeEndDate(startDate: string, durationDays: number): string {
+  const dt = new Date(`${startDate}T00:00:00.000Z`)
+  dt.setUTCDate(dt.getUTCDate() + durationDays)
+  return dt.toISOString().slice(0, 10)
+}
+
+function getSiteUrl(request: Request): string {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim()
+  if (envUrl) return envUrl.replace(/\/$/, "")
+
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host")
+  const proto = request.headers.get("x-forwarded-proto") || "http"
+  if (host) return `${proto}://${host}`.replace(/\/$/, "")
+
+  return "http://localhost:3000"
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        resolve(fallback)
+      })
+  })
+}
+
+async function getCurrentUserWithRole() {
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return { supabase, user: null, profile: null as null }
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, role, gym_id")
+    .eq("id", user.id)
+    .maybeSingle()
+
+  return { supabase, user, profile }
+}
+
+export async function POST(request: Request) {
+  const { supabase, user, profile } = await getCurrentUserWithRole()
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+
+  if (
+    !profile?.role ||
+    !MANAGER_ROLES.includes(profile.role as ManagerRole) ||
+    !profile.gym_id
+  ) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 })
+  }
+
+  let body: z.infer<typeof onboardSchema>
+  try {
+    const parsed = onboardSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request body.", issues: parsed.error.issues },
+        { status: 400 },
+      )
+    }
+    body = parsed.data
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON payload." },
+      { status: 400 },
+    )
+  }
+
+  const admin = createAdminClient()
+
+  // Fetch plan and gym name in parallel.
+  const [planResult, gymResult] = await Promise.all([
+    supabase
+      .from("membership_plans")
+      .select("id, duration_days, price, is_active")
+      .eq("id", body.planId)
+      .eq("gym_id", profile.gym_id)
+      .maybeSingle(),
+    supabase
+      .from("gyms")
+      .select("name")
+      .eq("id", profile.gym_id)
+      .maybeSingle(),
+  ])
+
+  if (planResult.error || !planResult.data || !planResult.data.is_active) {
+    return NextResponse.json(
+      { error: "Membership plan is invalid or inactive." },
+      { status: 400 },
+    )
+  }
+
+  const plan = planResult.data
+  // Fall back gracefully if gym name can't be fetched.
+  const gymName = gymResult.data?.name ?? "Your Gym"
+
+  // -------------------------------------------------------------------------
+  // Resolve member identity — onboarding requires a new unique email.
+  // Existing members should use the renew/status flows instead.
+  // -------------------------------------------------------------------------
+
+  const { data: existingProfile } = await supabase
+    .from("profiles")
+    .select("id, gym_id, name")
+    .eq("email", body.email)
+    .maybeSingle()
+
+  if (existingProfile) {
+    // Already belongs to a different gym — hard block
+    if (existingProfile.gym_id && existingProfile.gym_id !== profile.gym_id) {
+      return NextResponse.json(
+        { error: "This email is already assigned to another gym." },
+        { status: 409 },
+      )
+    }
+
+    // Already a member of THIS gym — tell staff to use Renew
+    if (existingProfile.gym_id === profile.gym_id) {
+      return NextResponse.json(
+        { error: `${existingProfile.name ?? "This person"} is already a member here. Use Renew instead.` },
+        { status: 409 },
+      )
+    }
+  }
+  const { data: createdAuth, error: createAuthError } =
+    await admin.auth.admin.createUser({
+      email: body.email,
+      email_confirm: true,
+      user_metadata: {
+        name: body.name,
+        role: "member",
+      },
+    })
+
+  if (createAuthError || !createdAuth.user) {
+    return NextResponse.json(
+      {
+        error:
+          createAuthError?.message ?? "Failed to create auth user.",
+      },
+      { status: 400 },
+    )
+  }
+
+  const memberId: string = createdAuth.user.id
+
+  // -------------------------------------------------------------------------
+  // Upsert profile
+  // -------------------------------------------------------------------------
+
+  const qrPayload = `stren://checkin/${profile.gym_id}/${memberId}`
+
+  const { error: profileUpsertError } = await supabase
+    .from("profiles")
+    .upsert(
+      {
+        id: memberId,
+        email: body.email,
+        name: body.name,
+        role: "member",
+        status: "active",
+        gym_id: profile.gym_id,
+        avatar_url: body.avatarUrl,
+        qr_code: qrPayload,
+      },
+      { onConflict: "id" },
+    )
+
+  if (profileUpsertError) {
+    return NextResponse.json(
+      {
+        error: `Failed to upsert profile: ${profileUpsertError.message}`,
+      },
+      { status: 400 },
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // Expire old memberships and create new one
+  // -------------------------------------------------------------------------
+
+  const startDate = body.startDate ?? new Date().toISOString().slice(0, 10)
+  const endDate = computeEndDate(startDate, plan.duration_days)
+
+  const { error: expireError } = await supabase
+    .from("memberships")
+    .update({ status: "expired" })
+    .eq("member_id", memberId)
+    .eq("gym_id", profile.gym_id)
+    .eq("status", "active")
+
+  if (expireError) {
+    return NextResponse.json(
+      {
+        error: `Failed to expire previous active memberships: ${expireError.message}`,
+      },
+      { status: 400 },
+    )
+  }
+
+  const { data: createdMembership, error: membershipError } = await supabase
+    .from("memberships")
+    .insert({
+      member_id: memberId,
+      plan_id: plan.id,
+      gym_id: profile.gym_id,
+      start_date: startDate,
+      end_date: endDate,
+      status: "active",
+      payment_method: body.paymentMethod,
+      amount_paid: body.amountPaid ?? plan.price,
+    })
+    .select("id")
+    .maybeSingle()
+
+  if (membershipError || !createdMembership) {
+    return NextResponse.json(
+      {
+        error:
+          membershipError?.message ?? "Failed to create membership.",
+      },
+      { status: 400 },
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // Generate magic link
+  // -------------------------------------------------------------------------
+
+  const siteUrl = getSiteUrl(request)
+  const redirectTo = `${siteUrl}/auth/callback`
+
+  const { data: linkData, error: linkError } =
+    await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email: body.email,
+      options: {
+        redirectTo,
+        data: { role: "member" },
+      },
+    })
+
+  if (linkError || !linkData.properties?.action_link) {
+    // Member and membership exist — return partial success.
+    await admin.from("member_onboarding_events").insert({
+      member_id: memberId,
+      gym_id: profile.gym_id,
+      created_by: user.id,
+      email: body.email,
+      magic_link_url: null,
+      qr_code: qrPayload,
+      sent_via: "preview",
+    })
+
+    return NextResponse.json(
+      {
+        memberId,
+        membershipId: createdMembership.id,
+        qrCode: qrPayload,
+        magicLink: null,
+        redirectTo,
+        emailError:
+          linkError?.message ??
+          "Magic link generation failed; member was created successfully.",
+      },
+      { status: 207 },
+    )
+  }
+
+  const magicLink = linkData.properties.action_link
+
+  // -------------------------------------------------------------------------
+  // Send email
+  // -------------------------------------------------------------------------
+
+  const emailTimeoutResult: SendResult = {
+    ok: false,
+    error: "Email send timed out. Share the magic link manually.",
+  }
+
+  const emailResult = await withTimeout(
+    sendOnboardingEmail({
+      to: body.email,
+      memberName: body.name,
+      gymName,
+      qrPayload,
+      magicLink,
+    }),
+    15000,
+    emailTimeoutResult,
+  )
+
+  // Log the onboarding event regardless of email outcome.
+  await admin.from("member_onboarding_events").insert({
+    member_id: memberId,
+    gym_id: profile.gym_id,
+    created_by: user.id,
+    email: body.email,
+    magic_link_url: magicLink,
+    qr_code: qrPayload,
+    // Record whether the email actually went out.
+    sent_via: emailResult.ok ? "email" : "preview",
+  })
+
+  if (!emailResult.ok) {
+    // Non-fatal: member is created, but staff should know to share the link manually.
+    return NextResponse.json(
+      {
+        memberId,
+        membershipId: createdMembership.id,
+        qrCode: qrPayload,
+        magicLink,
+        redirectTo,
+        emailError: `Member created but email failed to send: ${emailResult.error}. Share the magic link above manually.`,
+      },
+      { status: 207 },
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // Full success
+  // -------------------------------------------------------------------------
+
+  return NextResponse.json({
+    memberId,
+    membershipId: createdMembership.id,
+    qrCode: qrPayload,
+    magicLink,
+    redirectTo,
+    emailSent: true,
+  })
+}
+</file>
+
 <file path="app/dashboard/classes/page.tsx">
 'use client';
 
@@ -21743,155 +21747,6 @@ export async function getStreak(memberId: string) {
 }
 </file>
 
-<file path="lib/types.ts">
-// ============================================
-// Original types (kept for backward compatibility)
-// ============================================
-
-export type MembershipPlanId = "monthly" | "weekly" | "walkin"
-
-export interface MembershipPlan {
-  id: MembershipPlanId
-  name: string
-  price: number
-  durationDays: number
-}
-
-export type MemberStatus = "active" | "expired" | "frozen"
-export type PaymentMethod = "cash" | "gcash"
-
-export interface Member {
-  id: string
-  name: string
-  contactNumber: string
-  membershipPlanId: MembershipPlanId
-  startDate: string // ISO date
-  endDate: string // ISO date
-  status: MemberStatus
-  createdAt: string // ISO date
-}
-
-export interface Payment {
-  id: string
-  memberId: string
-  amount: number
-  method: PaymentMethod
-  description: string
-  date: string // ISO date
-}
-
-export interface CheckIn {
-  id: string
-  memberId: string
-  checkInTime: string // ISO datetime
-  checkOutTime: string | null // ISO datetime or null if still checked in
-}
-
-// ============================================
-// Engagement types (GymPulse pivot)
-// ============================================
-
-export type UserRole = "member" | "admin" | "staff" | "owner"
-export type ProfileStatus = "pending" | "active" | "rejected"
-
-export interface Gym {
-  id: string
-  name: string
-  code: string
-  address: string | null
-  phone: string | null
-  createdAt: string
-}
-
-export interface Profile {
-  id: string
-  email: string
-  name: string
-  contactNumber: string | null
-  role: UserRole
-  status: ProfileStatus
-  gymId: string | null
-  avatarUrl: string | null
-  avatarUpdatedAt: string | null
-  avatarChangeLockedUntil: string | null
-  avatarChangeCount: number
-  qrCode: string
-  createdAt: string
-}
-
-export interface Membership {
-  id: string
-  memberId: string
-  planId: string
-  startDate: string
-  endDate: string
-  status: MemberStatus
-  paymentMethod: PaymentMethod
-  amountPaid: number
-  createdAt: string
-}
-
-export interface Attendance {
-  id: string
-  memberId: string
-  checkIn: string
-  checkOut: string | null
-  durationMin: number | null
-}
-
-export interface Streak {
-  id: string
-  memberId: string
-  currentStreak: number
-  bestStreak: number
-  lastVisitDate: string | null
-}
-
-export type FeedItemType = "check_in" | "check_out" | "announcement" | "streak_milestone"
-
-export interface FeedItem {
-  id: string
-  memberId: string
-  type: FeedItemType
-  title: string
-  description: string | null
-  metadata: Record<string, unknown> | null
-  createdAt: string
-  // Joined data (optional, populated by queries)
-  memberName?: string
-  memberAvatar?: string | null
-}
-
-export interface Announcement {
-  id: string
-  title: string
-  body: string
-  createdBy: string
-  createdAt: string
-}
-
-// ============================================
-// Engagement Stats (derived, for UI)
-// ============================================
-
-export interface MemberStats {
-  totalVisits: number
-  monthlyVisits: number
-  currentStreak: number
-  bestStreak: number
-  avgSessionMinutes: number
-  leaderboardRank: number | null
-}
-
-export interface LeaderboardEntry {
-  memberId: string
-  memberName: string
-  avatarUrl: string | null
-  value: number // visits, minutes, or streak count
-  rank: number
-}
-</file>
-
 <file path="public/sw.js">
 const CACHE_VERSION = 'v3';
 const STATIC_CACHE = `stren-static-${CACHE_VERSION}`;
@@ -24215,6 +24070,155 @@ export function NotificationsPanel() {
       )}
     </div>
   );
+}
+</file>
+
+<file path="lib/types.ts">
+// ============================================
+// Original types (kept for backward compatibility)
+// ============================================
+
+export type MembershipPlanId = "monthly" | "weekly" | "walkin"
+
+export interface MembershipPlan {
+  id: MembershipPlanId
+  name: string
+  price: number
+  durationDays: number
+}
+
+export type MemberStatus = "active" | "expired" | "frozen"
+export type PaymentMethod = "cash" | "gcash"
+
+export interface Member {
+  id: string
+  name: string
+  contactNumber: string
+  membershipPlanId: MembershipPlanId
+  startDate: string // ISO date
+  endDate: string // ISO date
+  status: MemberStatus
+  createdAt: string // ISO date
+}
+
+export interface Payment {
+  id: string
+  memberId: string
+  amount: number
+  method: PaymentMethod
+  description: string
+  date: string // ISO date
+}
+
+export interface CheckIn {
+  id: string
+  memberId: string
+  checkInTime: string // ISO datetime
+  checkOutTime: string | null // ISO datetime or null if still checked in
+}
+
+// ============================================
+// Engagement types (GymPulse pivot)
+// ============================================
+
+export type UserRole = "member" | "admin" | "staff" | "owner"
+export type ProfileStatus = "pending" | "active" | "rejected"
+
+export interface Gym {
+  id: string
+  name: string
+  code: string
+  address: string | null
+  phone: string | null
+  createdAt: string
+}
+
+export interface Profile {
+  id: string
+  email: string
+  name: string
+  contactNumber: string | null
+  role: UserRole
+  status: ProfileStatus
+  gymId: string | null
+  avatarUrl: string | null
+  avatarUpdatedAt: string | null
+  avatarChangeLockedUntil: string | null
+  avatarChangeCount: number
+  qrCode: string
+  createdAt: string
+}
+
+export interface Membership {
+  id: string
+  memberId: string
+  planId: string
+  startDate: string
+  endDate: string
+  status: MemberStatus
+  paymentMethod: PaymentMethod
+  amountPaid: number
+  createdAt: string
+}
+
+export interface Attendance {
+  id: string
+  memberId: string
+  checkIn: string
+  checkOut: string | null
+  durationMin: number | null
+}
+
+export interface Streak {
+  id: string
+  memberId: string
+  currentStreak: number
+  bestStreak: number
+  lastVisitDate: string | null
+}
+
+export type FeedItemType = "check_in" | "check_out" | "announcement" | "streak_milestone"
+
+export interface FeedItem {
+  id: string
+  memberId: string
+  type: FeedItemType
+  title: string
+  description: string | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
+  // Joined data (optional, populated by queries)
+  memberName?: string
+  memberAvatar?: string | null
+}
+
+export interface Announcement {
+  id: string
+  title: string
+  body: string
+  createdBy: string
+  createdAt: string
+}
+
+// ============================================
+// Engagement Stats (derived, for UI)
+// ============================================
+
+export interface MemberStats {
+  totalVisits: number
+  monthlyVisits: number
+  currentStreak: number
+  bestStreak: number
+  avgSessionMinutes: number
+  leaderboardRank: number | null
+}
+
+export interface LeaderboardEntry {
+  memberId: string
+  memberName: string
+  avatarUrl: string | null
+  value: number // visits, minutes, or streak count
+  rank: number
 }
 </file>
 
@@ -29584,6 +29588,110 @@ function normalizeStoragePath(value: string | null | undefined): string | null {
 }
 </file>
 
+<file path="package.json">
+{
+  "name": "my-project",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "vitest run --coverage",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install",
+    "test:ci": "npm run lint && npm run typecheck && npm run test:unit && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.9.1",
+    "@radix-ui/react-accordion": "1.2.12",
+    "@radix-ui/react-alert-dialog": "1.1.15",
+    "@radix-ui/react-aspect-ratio": "1.1.8",
+    "@radix-ui/react-avatar": "1.1.11",
+    "@radix-ui/react-checkbox": "1.3.3",
+    "@radix-ui/react-collapsible": "1.1.12",
+    "@radix-ui/react-context-menu": "2.2.16",
+    "@radix-ui/react-dialog": "1.1.15",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@radix-ui/react-hover-card": "1.1.15",
+    "@radix-ui/react-label": "2.1.8",
+    "@radix-ui/react-menubar": "1.1.16",
+    "@radix-ui/react-navigation-menu": "1.2.14",
+    "@radix-ui/react-popover": "1.1.15",
+    "@radix-ui/react-progress": "1.1.8",
+    "@radix-ui/react-radio-group": "1.3.8",
+    "@radix-ui/react-scroll-area": "1.2.10",
+    "@radix-ui/react-select": "2.2.6",
+    "@radix-ui/react-separator": "1.1.8",
+    "@radix-ui/react-slider": "1.3.6",
+    "@radix-ui/react-slot": "1.2.4",
+    "@radix-ui/react-switch": "1.2.6",
+    "@radix-ui/react-tabs": "1.1.13",
+    "@radix-ui/react-toast": "1.2.15",
+    "@radix-ui/react-toggle": "1.1.10",
+    "@radix-ui/react-toggle-group": "1.1.11",
+    "@radix-ui/react-tooltip": "1.2.8",
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "@vercel/analytics": "1.6.1",
+    "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "1.1.1",
+    "date-fns": "^4.1.0",
+    "embla-carousel-react": "8.6.0",
+    "html5-qrcode": "^2.3.8",
+    "input-otp": "1.4.2",
+    "lucide-react": "^0.564.0",
+    "next": "^16.2.2",
+    "next-themes": "^0.4.6",
+    "qrcode": "^1.5.4",
+    "react": "19.2.4",
+    "react-day-picker": "9.13.2",
+    "react-dom": "19.2.4",
+    "react-hook-form": "^7.54.1",
+    "react-resizable-panels": "^2.1.7",
+    "recharts": "2.15.0",
+    "resend": "^6.12.2",
+    "sonner": "^1.7.1",
+    "supabase": "^2.95.3",
+    "swiper": "^12.1.3",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss-animate": "^1.0.7",
+    "vaul": "^1.1.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@tailwindcss/postcss": "^4.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.0",
+    "eslint": "^10.0.3",
+    "globals": "^17.4.0",
+    "jsdom": "^29.0.0",
+    "postcss": "^8.5",
+    "tailwindcss": "^4.2.0",
+    "tw-animate-css": "1.3.3",
+    "typescript": "5.7.3",
+    "typescript-eslint": "^8.57.1",
+    "vitest": "^4.1.0"
+  }
+}
+</file>
+
 <file path="app/member/profile/page.tsx">
 'use client';
 
@@ -29775,7 +29883,6 @@ function AvatarSection({ profile, refreshProfile }: { profile: Profile; refreshP
         error?: string
         avatarUrl?: string
       };
-      console.log("Error message: ", payload.error);
 
       if (!response.ok) {
         throw new Error(payload.error ?? 'Failed to update avatar');
@@ -30210,110 +30317,6 @@ export default function ProfilePage() {
       </p>
     </div>
   );
-}
-</file>
-
-<file path="package.json">
-{
-  "name": "my-project",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "vitest run --coverage",
-    "test:unit:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:install": "playwright install",
-    "test:ci": "npm run lint && npm run typecheck && npm run test:unit && npm run build && npm run test:e2e"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^3.9.1",
-    "@radix-ui/react-accordion": "1.2.12",
-    "@radix-ui/react-alert-dialog": "1.1.15",
-    "@radix-ui/react-aspect-ratio": "1.1.8",
-    "@radix-ui/react-avatar": "1.1.11",
-    "@radix-ui/react-checkbox": "1.3.3",
-    "@radix-ui/react-collapsible": "1.1.12",
-    "@radix-ui/react-context-menu": "2.2.16",
-    "@radix-ui/react-dialog": "1.1.15",
-    "@radix-ui/react-dropdown-menu": "2.1.16",
-    "@radix-ui/react-hover-card": "1.1.15",
-    "@radix-ui/react-label": "2.1.8",
-    "@radix-ui/react-menubar": "1.1.16",
-    "@radix-ui/react-navigation-menu": "1.2.14",
-    "@radix-ui/react-popover": "1.1.15",
-    "@radix-ui/react-progress": "1.1.8",
-    "@radix-ui/react-radio-group": "1.3.8",
-    "@radix-ui/react-scroll-area": "1.2.10",
-    "@radix-ui/react-select": "2.2.6",
-    "@radix-ui/react-separator": "1.1.8",
-    "@radix-ui/react-slider": "1.3.6",
-    "@radix-ui/react-slot": "1.2.4",
-    "@radix-ui/react-switch": "1.2.6",
-    "@radix-ui/react-tabs": "1.1.13",
-    "@radix-ui/react-toast": "1.2.15",
-    "@radix-ui/react-toggle": "1.1.10",
-    "@radix-ui/react-toggle-group": "1.1.11",
-    "@radix-ui/react-tooltip": "1.2.8",
-    "@supabase/ssr": "^0.9.0",
-    "@supabase/supabase-js": "^2.98.0",
-    "@vercel/analytics": "1.6.1",
-    "autoprefixer": "^10.4.20",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "cmdk": "1.1.1",
-    "date-fns": "^4.1.0",
-    "embla-carousel-react": "8.6.0",
-    "html5-qrcode": "^2.3.8",
-    "input-otp": "1.4.2",
-    "lucide-react": "^0.564.0",
-    "next": "^16.2.2",
-    "next-themes": "^0.4.6",
-    "qrcode": "^1.5.4",
-    "react": "19.2.4",
-    "react-day-picker": "9.13.2",
-    "react-dom": "19.2.4",
-    "react-hook-form": "^7.54.1",
-    "react-resizable-panels": "^2.1.7",
-    "recharts": "2.15.0",
-    "resend": "^6.12.2",
-    "sonner": "^1.7.1",
-    "supabase": "^2.95.3",
-    "swiper": "^12.1.3",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss-animate": "^1.0.7",
-    "vaul": "^1.1.2",
-    "zod": "^3.24.1"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "@tailwindcss/postcss": "^4.2.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^22",
-    "@types/qrcode": "^1.5.6",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/coverage-v8": "^4.1.0",
-    "eslint": "^10.0.3",
-    "globals": "^17.4.0",
-    "jsdom": "^29.0.0",
-    "postcss": "^8.5",
-    "tailwindcss": "^4.2.0",
-    "tw-animate-css": "1.3.3",
-    "typescript": "5.7.3",
-    "typescript-eslint": "^8.57.1",
-    "vitest": "^4.1.0"
-  }
 }
 </file>
 
@@ -30960,628 +30963,6 @@ export function LoginForm({ gymCode }: LoginFormProps) {
       </div>
     </>
   );
-}
-</file>
-
-<file path="app/admin/members/page.tsx">
-"use client"
-
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
-import { createClient } from "@/lib/supabase"
-import { useAuth } from "@/lib/auth-context"
-import { OnboardMemberModal } from "@/components/admin/OnboardMemberModal"
-import {
-  A,
-  ACard,
-  Avatar,
-  ChoicePicker,
-  EmptyState,
-  GhostBtn,
-  LoadingSkeleton,
-  Modal,
-  PageHeader,
-  PrimaryBtn,
-  SearchInput,
-  StatusPill,
-  SummaryBox,
-} from "@/lib/admin-ui"
-import { toast } from "sonner"
-import { Snowflake, Play, AlertTriangle, Users, UserPlus } from "lucide-react"
-
-interface MemberRow {
-  profile_id: string
-  name: string
-  email: string
-  contact_number: string | null
-  profile_status: "active" | "rejected"
-  membership_id: string | null
-  plan_name: string | null
-  start_date: string | null
-  end_date: string | null
-  membership_status: "active" | "expired" | "frozen" | null
-  created_at: string | null
-}
-
-interface PaymentRow {
-  id: string
-  amount_paid: number
-  payment_method: "cash" | "gcash"
-  created_at: string | null
-  plan_name: string
-}
-
-interface PlanOption {
-  id: string
-  name: string
-  price: number
-  duration_days: number
-}
-
-interface OnboardResponse {
-  memberId: string
-  membershipId: string
-  qrCode: string
-  magicLink: string | null
-  redirectTo?: string
-  emailSent?: boolean
-  emailError?: string
-}
-
-const MEMBERS_CACHE_TTL_MS = 30_000
-const PLANS_CACHE_TTL_MS = 5 * 60_000
-const MEMBERS_CACHE_PREFIX = "admin-members-cache:"
-
-type MembersCachePayload = {
-  gymId: string
-  cachedAt: number
-  members: MemberRow[]
-}
-
-function readMembersCache(gymId: string): MembersCachePayload | null {
-  if (typeof window === "undefined") return null
-  try {
-    const raw = window.sessionStorage.getItem(`${MEMBERS_CACHE_PREFIX}${gymId}`)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as MembersCachePayload
-    if (!parsed || parsed.gymId !== gymId || !Array.isArray(parsed.members)) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function writeMembersCache(gymId: string, members: MemberRow[]) {
-  if (typeof window === "undefined") return
-  const payload: MembersCachePayload = {
-    gymId,
-    cachedAt: Date.now(),
-    members,
-  }
-  try {
-    window.sessionStorage.setItem(`${MEMBERS_CACHE_PREFIX}${gymId}`, JSON.stringify(payload))
-  } catch {
-    // Ignore storage failures in restricted/private environments.
-  }
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), ms)
-    promise
-      .then((value) => {
-        clearTimeout(timer)
-        resolve(value)
-      })
-      .catch((error) => {
-        clearTimeout(timer)
-        reject(error)
-      })
-  })
-}
-
-export default function MembersPage() {
-  const supabase = useMemo(() => createClient(), [])
-  const { profile } = useAuth()
-  const [members, setMembers] = useState<MemberRow[]>([])
-  const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [detailOpen, setDetailOpen] = useState(false)
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
-  const [selectedPayments, setSelectedPayments] = useState<PaymentRow[]>([])
-  const [renewOpen, setRenewOpen] = useState(false)
-  const [renewMember, setRenewMember] = useState<MemberRow | null>(null)
-  const [renewPlans, setRenewPlans] = useState<PlanOption[]>([])
-  const [renewPlanId, setRenewPlanId] = useState("")
-  const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
-  const [renewLoading, setRenewLoading] = useState(false)
-  const [onboardOpen, setOnboardOpen] = useState(false)
-  const plansCacheRef = useRef<{ gymId: string; cachedAt: number; plans: PlanOption[] } | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  const getActivePlans = useCallback(async (forceRefresh = false): Promise<PlanOption[]> => {
-    if (!profile?.gymId) return []
-
-    const cached = plansCacheRef.current
-    const isCachedValid =
-      cached &&
-      cached.gymId === profile.gymId &&
-      Date.now() - cached.cachedAt < PLANS_CACHE_TTL_MS
-
-    if (!forceRefresh && isCachedValid) {
-      return cached.plans
-    }
-
-    const query = supabase
-      .from("membership_plans")
-      .select("id, name, price, duration_days")
-      .eq("gym_id", profile.gymId)
-      .eq("is_active", true)
-      .order("price")
-
-    const { data, error } = await query
-
-    if (error) {
-      throw new Error(error.message)
-    }
-
-    const plans = (data ?? []) as PlanOption[]
-    plansCacheRef.current = {
-      gymId: profile.gymId,
-      cachedAt: Date.now(),
-      plans,
-    }
-    return plans
-  }, [profile?.gymId, supabase])
-
-  const fetchMembers = useCallback(async (forceRefresh = false) => {
-    if (!profile?.gymId) {
-      setMembers([])
-      setIsLoading(false)
-      return
-    }
-
-    let usedCachedSnapshot = false
-    if (!forceRefresh) {
-      const cached = readMembersCache(profile.gymId)
-      if (cached) {
-        setMembers(cached.members)
-        setIsLoading(false)
-        usedCachedSnapshot = true
-        if (Date.now() - cached.cachedAt < MEMBERS_CACHE_TTL_MS) {
-          return
-        }
-      }
-    }
-
-    try {
-      const memberQueries = Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name, email, contact_number, created_at, status")
-          .eq("role", "member")
-          .eq("gym_id", profile.gymId)
-          .order("name"),
-        supabase
-          .from("memberships")
-          .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
-          .eq("gym_id", profile.gymId)
-          .order("created_at", { ascending: false }),
-      ])
-
-      const [{ data: profilesData }, { data: membershipsData }] = await withTimeout(
-        memberQueries,
-        15000,
-        "Loading members timed out",
-      )
-
-      const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
-      for (const m of membershipsData ?? []) {
-        if (!m.member_id) continue
-        if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
-      }
-
-      const nextMembers: MemberRow[] = (profilesData ?? []).map((p) => {
-          const m = membershipMap.get(p.id)
-          return {
-            profile_id: p.id,
-            name: p.name,
-            email: p.email,
-            contact_number: p.contact_number,
-        profile_status: p.status === "rejected" ? "rejected" : "active",
-            membership_id: m?.id ?? null,
-            plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
-            start_date: m?.start_date ?? null,
-            end_date: m?.end_date ?? null,
-            membership_status: m?.status ?? null,
-            created_at: p.created_at,
-          }
-        })
-
-      setMembers(nextMembers)
-      writeMembersCache(profile.gymId, nextMembers)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown members load error"
-      if (!usedCachedSnapshot) {
-        toast.error(`Failed to load members: ${message}`)
-        setMembers([])
-      }
-    } finally {
-      setIsLoading(false)
-    }
-  }, [profile?.gymId, supabase])
-
-  useEffect(() => { void fetchMembers(false) }, [fetchMembers])
-
-  async function fetchPayments(memberId: string) {
-    const { data } = await supabase
-      .from("memberships")
-      .select("id, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
-      .eq("member_id", memberId)
-      .order("created_at", { ascending: false })
-    setSelectedPayments(
-      (data ?? []).map((p) => ({
-        id: p.id,
-        amount_paid: p.amount_paid,
-        payment_method: p.payment_method,
-        created_at: p.created_at,
-        plan_name: (p.membership_plans as unknown as { name: string })?.name ?? "Unknown",
-      }))
-    )
-  }
-
-  const filtered = useMemo(() => {
-    let list = [...members]
-    if (statusFilter === "banned") list = list.filter((m) => m.profile_status === "rejected")
-    else if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
-    else if (statusFilter !== "all") list = list.filter((m) => m.membership_status === statusFilter)
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter(
-        (m) =>
-          m.name.toLowerCase().includes(q) ||
-          m.email.toLowerCase().includes(q) ||
-          (m.contact_number && m.contact_number.includes(q))
-      )
-    }
-    return list.sort((a, b) => a.name.localeCompare(b.name))
-  }, [members, statusFilter, search])
-
-  const selectedMember = members.find((m) => m.profile_id === selectedMemberId)
-
-  async function handleStatusChange(membershipId: string, status: "active" | "frozen") {
-    const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
-    if (error) { toast.error("Failed to update status"); return }
-    toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
-    void fetchMembers(true)
-  }
-
-  async function handleProfileStatusChange(memberId: string, status: "active" | "rejected") {
-    const { error } = await supabase.from("profiles").update({ status }).eq("id", memberId)
-    if (error) {
-      toast.error(status === "rejected" ? "Failed to ban member" : "Failed to unban member")
-      return
-    }
-    toast.success(status === "rejected" ? "Member has been banned." : "Member has been unbanned.")
-    void fetchMembers(true)
-  }
-
-  async function openRenewDialog(member: MemberRow) {
-    setRenewMember(member)
-    setRenewPaymentMethod("cash")
-    setRenewPlans([])
-    setRenewPlanId("")
-    setRenewOpen(true)
-    try {
-      const plans = await getActivePlans(false)
-      setRenewPlans(plans)
-      setRenewPlanId(plans[0]?.id ?? "")
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load plans"
-      toast.error(message)
-    }
-  }
-
-  async function handleRenewMembership() {
-    if (!renewMember) return
-    const plan = renewPlans.find((p) => p.id === renewPlanId)
-    if (!plan) { toast.error("Please select a membership plan"); return }
-
-    setRenewLoading(true)
-    const startDate = new Date()
-    const endDate = new Date()
-    endDate.setDate(endDate.getDate() + plan.duration_days)
-    const startDateValue = startDate.toISOString().split("T")[0]
-
-    const { error: insertError } = await supabase.from("memberships").insert({
-      member_id: renewMember.profile_id,
-      plan_id: plan.id,
-      start_date: startDateValue,
-      end_date: endDate.toISOString().split("T")[0],
-      status: "active",
-      payment_method: renewPaymentMethod,
-      amount_paid: plan.price,
-      gym_id: profile?.gymId ?? null,
-    })
-
-    if (insertError) { toast.error("Failed to renew: " + insertError.message); setRenewLoading(false); return }
-
-    await supabase
-      .from("memberships")
-      .update({ status: "expired" })
-      .eq("member_id", renewMember.profile_id)
-      .eq("status", "active")
-      .neq("start_date", startDateValue)
-
-    toast.success(renewMember.name + " renewed successfully!")
-    setRenewLoading(false)
-    setRenewOpen(false)
-    setRenewMember(null)
-    setRenewPlans([])
-    setRenewPlanId("")
-    setRenewPaymentMethod("cash")
-    void fetchMembers(true)
-  }
-
-  const expiredMembers = members.filter((m) => m.profile_status !== "rejected" && m.membership_status === "expired")
-
-  if (isLoading) {
-    return <LoadingSkeleton rows={6} h={68} />
-  }
-
-  return (
-    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
-      <PageHeader
-        title="Members"
-        subtitle={`${members.length} member account${members.length !== 1 ? "s" : ""}`}
-        action={
-          <PrimaryBtn onClick={() => setOnboardOpen(true)}>
-            <UserPlus className="h-4 w-4" />
-            Add member
-          </PrimaryBtn>
-        }
-      />
-
-      {expiredMembers.length > 0 && (
-        <div
-          className="flex items-center gap-3 rounded-lg p-4"
-          style={{ backgroundColor: "var(--admin-expired-bg)", border: "1px solid var(--admin-expired-border)" }}
-        >
-          <AlertTriangle className="h-5 w-5 shrink-0" style={{ color: "var(--admin-expired-text)" }} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium" style={{ color: "var(--admin-expired-text)" }}>
-              {expiredMembers.length} expired membership{expiredMembers.length > 1 ? "s" : ""}
-            </p>
-            <p className="text-xs truncate" style={{ color: A.text2 }}>
-              {expiredMembers.map((m) => m.name).join(", ")}
-            </p>
-          </div>
-          <GhostBtn onClick={() => setStatusFilter("expired")} color="var(--admin-expired-text)">View</GhostBtn>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="flex-1">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by name, email, or contact..." />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg px-3 py-2 text-sm outline-none"
-          style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text, minWidth: 170 }}
-        >
-          <option value="all">All Members</option>
-          <option value="active">Active Plan</option>
-          <option value="expired">Expired</option>
-          <option value="frozen">Frozen</option>
-          <option value="banned">Banned</option>
-          <option value="no_plan">No Plan</option>
-        </select>
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={<Users size={40} />}
-          title="No members found"
-          subtitle="Try adjusting your search or status filter"
-        />
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((m) => (
-            <ACard key={m.profile_id} className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <Avatar name={m.name} size={9} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedMemberId(m.profile_id)
-                          fetchPayments(m.profile_id)
-                          setDetailOpen(true)
-                        }}
-                        className="font-medium hover:underline text-sm text-left"
-                        style={{ color: A.primary }}
-                      >
-                        {m.name}
-                      </button>
-                      {m.profile_status === "rejected" && (
-                        <span
-                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                          style={{ backgroundColor: "var(--admin-expired-bg)", color: "var(--admin-expired-text)", border: "1px solid var(--admin-expired-border)" }}
-                        >
-                          Banned
-                        </span>
-                      )}
-                      <StatusPill status={m.membership_status} />
-                    </div>
-                    <p className="text-xs mt-0.5" style={{ color: A.muted }}>
-                      {m.contact_number ?? m.email}
-                      {m.plan_name && ` · ${m.plan_name}`}
-                      {m.end_date && ` · Exp ${m.end_date}`}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0 ml-3">
-                  <GhostBtn onClick={() => openRenewDialog(m)} color={A.primary} disabled={m.profile_status === "rejected"}>
-                    Renew
-                  </GhostBtn>
-                  {m.membership_id && m.membership_status === "active" && m.profile_status !== "rejected" && (
-                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "frozen")} color="var(--admin-frozen-text)">
-                      <Snowflake className="h-3 w-3" />
-                      Freeze
-                    </GhostBtn>
-                  )}
-                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && m.profile_status !== "rejected" && (
-                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "active")} color="var(--admin-active-text)">
-                      <Play className="h-3 w-3" />
-                      Activate
-                    </GhostBtn>
-                  )}
-                  {m.profile_status === "rejected" ? (
-                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "active")} color="var(--admin-active-text)">
-                      Unban
-                    </GhostBtn>
-                  ) : (
-                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "rejected")} color="var(--admin-expired-text)">
-                      Ban
-                    </GhostBtn>
-                  )}
-                </div>
-              </div>
-            </ACard>
-          ))}
-        </div>
-      )}
-
-      <p className="text-xs" style={{ color: A.muted }}>Showing {filtered.length} of {members.length} members</p>
-
-      <Modal
-        open={detailOpen}
-        onClose={() => setDetailOpen(false)}
-        title={selectedMember?.name ?? "Member Details"}
-        width={560}
-      >
-        {selectedMember && (
-          <div className="space-y-4">
-            <div
-              className="grid grid-cols-2 gap-3 rounded-xl p-4 text-sm"
-              style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
-            >
-              <div><p style={{ color: A.muted }}>Email</p><p style={{ color: A.text }}>{selectedMember.email}</p></div>
-              <div><p style={{ color: A.muted }}>Contact</p><p style={{ color: A.text }}>{selectedMember.contact_number ?? "N/A"}</p></div>
-              <div><p style={{ color: A.muted }}>Plan</p><p style={{ color: A.text }}>{selectedMember.plan_name ?? "No plan"}</p></div>
-              <div><p style={{ color: A.muted }}>Status</p><StatusPill status={selectedMember.membership_status} /></div>
-              <div><p style={{ color: A.muted }}>Start</p><p style={{ color: A.text }}>{selectedMember.start_date ?? "-"}</p></div>
-              <div><p style={{ color: A.muted }}>End</p><p style={{ color: A.text }}>{selectedMember.end_date ?? "-"}</p></div>
-              <div><p style={{ color: A.muted }}>Member Since</p><p style={{ color: A.text }}>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "-"}</p></div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs font-medium" style={{ color: A.muted }}>Payment History</p>
-              {selectedPayments.length === 0 ? (
-                <p className="text-xs" style={{ color: A.muted }}>No payments recorded.</p>
-              ) : (
-                <div className="max-h-48 space-y-2 overflow-y-auto">
-                  {selectedPayments.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between rounded-lg px-3 py-2 text-xs"
-                      style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
-                    >
-                      <span style={{ color: A.text }}>{p.plan_name}</span>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="rounded-full px-2 py-0.5"
-                          style={{
-                            backgroundColor: p.payment_method === "gcash" ? "#EFF6FF" : "#ECFDF3",
-                            color: p.payment_method === "gcash" ? "#2563EB" : "#16A34A",
-                            border: `1px solid ${p.payment_method === "gcash" ? "#BFDBFE" : "#BBF7D0"}`,
-                          }}
-                        >
-                          {p.payment_method}
-                        </span>
-                        <span className="font-semibold" style={{ color: A.text }}>₱{p.amount_paid.toLocaleString()}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={renewOpen}
-        onClose={() => {
-          setRenewOpen(false)
-          setRenewLoading(false)
-          setRenewMember(null)
-        }}
-        title="Renew Membership"
-        width={620}
-      >
-        {renewMember && (
-          <div className="space-y-5">
-            <SummaryBox
-              rows={[
-                { label: "Member", value: renewMember.name },
-                { label: "Current Plan", value: renewMember.plan_name ?? "No plan" },
-                { label: "Expiry", value: renewMember.end_date ?? "-" },
-              ]}
-            />
-
-            <ChoicePicker
-              label="Membership Plan"
-              value={renewPlanId}
-              onChange={setRenewPlanId}
-              options={renewPlans.map((plan) => ({
-                value: plan.id,
-                label: plan.name,
-                sub: `${plan.duration_days} days`,
-                right: `₱${plan.price.toLocaleString()}`,
-              }))}
-            />
-
-            <ChoicePicker
-              label="Payment Method"
-              value={renewPaymentMethod}
-              onChange={(v: "cash" | "gcash") => setRenewPaymentMethod(v)}
-              options={[
-                { value: "cash", label: "Cash" },
-                { value: "gcash", label: "GCash" },
-              ]}
-            />
-
-            {renewPlanId && (
-              <SummaryBox
-                rows={[
-                  { label: "Selected Plan", value: renewPlans.find((p) => p.id === renewPlanId)?.name ?? "-" },
-                  { label: "Method", value: renewPaymentMethod === "cash" ? "Cash" : "GCash" },
-                  { label: "Amount", value: `₱${(renewPlans.find((p) => p.id === renewPlanId)?.price ?? 0).toLocaleString()}` },
-                ]}
-              />
-            )}
-
-            <PrimaryBtn
-              onClick={handleRenewMembership}
-              disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
-            >
-              {renewLoading ? "Renewing..." : "Renew and Record Payment"}
-            </PrimaryBtn>
-          </div>
-        )}
-      </Modal>
-
-      <OnboardMemberModal
-        open={onboardOpen}
-        onClose={() => setOnboardOpen(false)}
-        onSuccess={() => void fetchMembers(true)}
-      />
-    </div>
-  )
 }
 </file>
 
@@ -33556,6 +32937,628 @@ function getGreeting() {
 }
 </file>
 
+<file path="app/admin/members/page.tsx">
+"use client"
+
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
+import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/lib/auth-context"
+import { OnboardMemberModal } from "@/components/admin/OnboardMemberModal"
+import {
+  A,
+  ACard,
+  Avatar,
+  ChoicePicker,
+  EmptyState,
+  GhostBtn,
+  LoadingSkeleton,
+  Modal,
+  PageHeader,
+  PrimaryBtn,
+  SearchInput,
+  StatusPill,
+  SummaryBox,
+} from "@/lib/admin-ui"
+import { toast } from "sonner"
+import { Snowflake, Play, AlertTriangle, Users, UserPlus } from "lucide-react"
+
+interface MemberRow {
+  profile_id: string
+  name: string
+  email: string
+  contact_number: string | null
+  profile_status: "active" | "rejected"
+  membership_id: string | null
+  plan_name: string | null
+  start_date: string | null
+  end_date: string | null
+  membership_status: "active" | "expired" | "frozen" | null
+  created_at: string | null
+}
+
+interface PaymentRow {
+  id: string
+  amount_paid: number
+  payment_method: "cash" | "gcash"
+  created_at: string | null
+  plan_name: string
+}
+
+interface PlanOption {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+}
+
+interface OnboardResponse {
+  memberId: string
+  membershipId: string
+  qrCode: string
+  magicLink: string | null
+  redirectTo?: string
+  emailSent?: boolean
+  emailError?: string
+}
+
+const MEMBERS_CACHE_TTL_MS = 30_000
+const PLANS_CACHE_TTL_MS = 5 * 60_000
+const MEMBERS_CACHE_PREFIX = "admin-members-cache:"
+
+type MembersCachePayload = {
+  gymId: string
+  cachedAt: number
+  members: MemberRow[]
+}
+
+function readMembersCache(gymId: string): MembersCachePayload | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.sessionStorage.getItem(`${MEMBERS_CACHE_PREFIX}${gymId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as MembersCachePayload
+    if (!parsed || parsed.gymId !== gymId || !Array.isArray(parsed.members)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeMembersCache(gymId: string, members: MemberRow[]) {
+  if (typeof window === "undefined") return
+  const payload: MembersCachePayload = {
+    gymId,
+    cachedAt: Date.now(),
+    members,
+  }
+  try {
+    window.sessionStorage.setItem(`${MEMBERS_CACHE_PREFIX}${gymId}`, JSON.stringify(payload))
+  } catch {
+    // Ignore storage failures in restricted/private environments.
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
+
+export default function MembersPage() {
+  const supabase = useMemo(() => createClient(), [])
+  const { profile } = useAuth()
+  const [members, setMembers] = useState<MemberRow[]>([])
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [selectedPayments, setSelectedPayments] = useState<PaymentRow[]>([])
+  const [renewOpen, setRenewOpen] = useState(false)
+  const [renewMember, setRenewMember] = useState<MemberRow | null>(null)
+  const [renewPlans, setRenewPlans] = useState<PlanOption[]>([])
+  const [renewPlanId, setRenewPlanId] = useState("")
+  const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
+  const [renewLoading, setRenewLoading] = useState(false)
+  const [onboardOpen, setOnboardOpen] = useState(false)
+  const plansCacheRef = useRef<{ gymId: string; cachedAt: number; plans: PlanOption[] } | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const getActivePlans = useCallback(async (forceRefresh = false): Promise<PlanOption[]> => {
+    if (!profile?.gymId) return []
+
+    const cached = plansCacheRef.current
+    const isCachedValid =
+      cached &&
+      cached.gymId === profile.gymId &&
+      Date.now() - cached.cachedAt < PLANS_CACHE_TTL_MS
+
+    if (!forceRefresh && isCachedValid) {
+      return cached.plans
+    }
+
+    const query = supabase
+      .from("membership_plans")
+      .select("id, name, price, duration_days")
+      .eq("gym_id", profile.gymId)
+      .eq("is_active", true)
+      .order("price")
+
+    const { data, error } = await query
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const plans = (data ?? []) as PlanOption[]
+    plansCacheRef.current = {
+      gymId: profile.gymId,
+      cachedAt: Date.now(),
+      plans,
+    }
+    return plans
+  }, [profile?.gymId, supabase])
+
+  const fetchMembers = useCallback(async (forceRefresh = false) => {
+    if (!profile?.gymId) {
+      setMembers([])
+      setIsLoading(false)
+      return
+    }
+
+    let usedCachedSnapshot = false
+    if (!forceRefresh) {
+      const cached = readMembersCache(profile.gymId)
+      if (cached) {
+        setMembers(cached.members)
+        setIsLoading(false)
+        usedCachedSnapshot = true
+        if (Date.now() - cached.cachedAt < MEMBERS_CACHE_TTL_MS) {
+          return
+        }
+      }
+    }
+
+    try {
+      const memberQueries = Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, name, email, contact_number, created_at, status")
+          .eq("role", "member")
+          .eq("gym_id", profile.gymId)
+          .order("name"),
+        supabase
+          .from("memberships")
+          .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
+          .eq("gym_id", profile.gymId)
+          .order("created_at", { ascending: false }),
+      ])
+
+      const [{ data: profilesData }, { data: membershipsData }] = await withTimeout(
+        memberQueries,
+        15000,
+        "Loading members timed out",
+      )
+
+      const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
+      for (const m of membershipsData ?? []) {
+        if (!m.member_id) continue
+        if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
+      }
+
+      const nextMembers: MemberRow[] = (profilesData ?? []).map((p) => {
+          const m = membershipMap.get(p.id)
+          return {
+            profile_id: p.id,
+            name: p.name,
+            email: p.email,
+            contact_number: p.contact_number,
+        profile_status: p.status === "rejected" ? "rejected" : "active",
+            membership_id: m?.id ?? null,
+            plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
+            start_date: m?.start_date ?? null,
+            end_date: m?.end_date ?? null,
+            membership_status: m?.status ?? null,
+            created_at: p.created_at,
+          }
+        })
+
+      setMembers(nextMembers)
+      writeMembersCache(profile.gymId, nextMembers)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown members load error"
+      if (!usedCachedSnapshot) {
+        toast.error(`Failed to load members: ${message}`)
+        setMembers([])
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }, [profile?.gymId, supabase])
+
+  useEffect(() => { void fetchMembers(false) }, [fetchMembers])
+
+  async function fetchPayments(memberId: string) {
+    const { data } = await supabase
+      .from("memberships")
+      .select("id, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
+      .eq("member_id", memberId)
+      .order("created_at", { ascending: false })
+    setSelectedPayments(
+      (data ?? []).map((p) => ({
+        id: p.id,
+        amount_paid: p.amount_paid,
+        payment_method: p.payment_method,
+        created_at: p.created_at,
+        plan_name: (p.membership_plans as unknown as { name: string })?.name ?? "Unknown",
+      }))
+    )
+  }
+
+  const filtered = useMemo(() => {
+    let list = [...members]
+    if (statusFilter === "banned") list = list.filter((m) => m.profile_status === "rejected")
+    else if (statusFilter === "no_plan") list = list.filter((m) => m.membership_status === null)
+    else if (statusFilter !== "all") list = list.filter((m) => m.membership_status === statusFilter)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      list = list.filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.email.toLowerCase().includes(q) ||
+          (m.contact_number && m.contact_number.includes(q))
+      )
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name))
+  }, [members, statusFilter, search])
+
+  const selectedMember = members.find((m) => m.profile_id === selectedMemberId)
+
+  async function handleStatusChange(membershipId: string, status: "active" | "frozen") {
+    const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
+    if (error) { toast.error("Failed to update status"); return }
+    toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
+    void fetchMembers(true)
+  }
+
+  async function handleProfileStatusChange(memberId: string, status: "active" | "rejected") {
+    const { error } = await supabase.from("profiles").update({ status }).eq("id", memberId)
+    if (error) {
+      toast.error(status === "rejected" ? "Failed to ban member" : "Failed to unban member")
+      return
+    }
+    toast.success(status === "rejected" ? "Member has been banned." : "Member has been unbanned.")
+    void fetchMembers(true)
+  }
+
+  async function openRenewDialog(member: MemberRow) {
+    setRenewMember(member)
+    setRenewPaymentMethod("cash")
+    setRenewPlans([])
+    setRenewPlanId("")
+    setRenewOpen(true)
+    try {
+      const plans = await getActivePlans(false)
+      setRenewPlans(plans)
+      setRenewPlanId(plans[0]?.id ?? "")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load plans"
+      toast.error(message)
+    }
+  }
+
+  async function handleRenewMembership() {
+    if (!renewMember) return
+    const plan = renewPlans.find((p) => p.id === renewPlanId)
+    if (!plan) { toast.error("Please select a membership plan"); return }
+
+    setRenewLoading(true)
+    const startDate = new Date()
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + plan.duration_days)
+    const startDateValue = startDate.toISOString().split("T")[0]
+
+    const { error: insertError } = await supabase.from("memberships").insert({
+      member_id: renewMember.profile_id,
+      plan_id: plan.id,
+      start_date: startDateValue,
+      end_date: endDate.toISOString().split("T")[0],
+      status: "active",
+      payment_method: renewPaymentMethod,
+      amount_paid: plan.price,
+      gym_id: profile?.gymId ?? null,
+    })
+
+    if (insertError) { toast.error("Failed to renew: " + insertError.message); setRenewLoading(false); return }
+
+    await supabase
+      .from("memberships")
+      .update({ status: "expired" })
+      .eq("member_id", renewMember.profile_id)
+      .eq("status", "active")
+      .neq("start_date", startDateValue)
+
+    toast.success(renewMember.name + " renewed successfully!")
+    setRenewLoading(false)
+    setRenewOpen(false)
+    setRenewMember(null)
+    setRenewPlans([])
+    setRenewPlanId("")
+    setRenewPaymentMethod("cash")
+    void fetchMembers(true)
+  }
+
+  const expiredMembers = members.filter((m) => m.profile_status !== "rejected" && m.membership_status === "expired")
+
+  if (isLoading) {
+    return <LoadingSkeleton rows={6} h={68} />
+  }
+
+  return (
+    <div className="space-y-6" style={{ backgroundColor: A.bg }}>
+      <PageHeader
+        title="Members"
+        subtitle={`${members.length} member account${members.length !== 1 ? "s" : ""}`}
+        action={
+          <PrimaryBtn onClick={() => setOnboardOpen(true)}>
+            <UserPlus className="h-4 w-4" />
+            Add member
+          </PrimaryBtn>
+        }
+      />
+
+      {expiredMembers.length > 0 && (
+        <div
+          className="flex items-center gap-3 rounded-lg p-4"
+          style={{ backgroundColor: "var(--admin-expired-bg)", border: "1px solid var(--admin-expired-border)" }}
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0" style={{ color: "var(--admin-expired-text)" }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium" style={{ color: "var(--admin-expired-text)" }}>
+              {expiredMembers.length} expired membership{expiredMembers.length > 1 ? "s" : ""}
+            </p>
+            <p className="text-xs truncate" style={{ color: A.text2 }}>
+              {expiredMembers.map((m) => m.name).join(", ")}
+            </p>
+          </div>
+          <GhostBtn onClick={() => setStatusFilter("expired")} color="var(--admin-expired-text)">View</GhostBtn>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <div className="flex-1">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name, email, or contact..." />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-lg px-3 py-2 text-sm outline-none"
+          style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}`, color: A.text, minWidth: 170 }}
+        >
+          <option value="all">All Members</option>
+          <option value="active">Active Plan</option>
+          <option value="expired">Expired</option>
+          <option value="frozen">Frozen</option>
+          <option value="banned">Banned</option>
+          <option value="no_plan">No Plan</option>
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Users size={40} />}
+          title="No members found"
+          subtitle="Try adjusting your search or status filter"
+        />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((m) => (
+            <ACard key={m.profile_id} className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <Avatar name={m.name} size={9} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMemberId(m.profile_id)
+                          fetchPayments(m.profile_id)
+                          setDetailOpen(true)
+                        }}
+                        className="font-medium hover:underline text-sm text-left"
+                        style={{ color: A.primary }}
+                      >
+                        {m.name}
+                      </button>
+                      {m.profile_status === "rejected" && (
+                        <span
+                          className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                          style={{ backgroundColor: "var(--admin-expired-bg)", color: "var(--admin-expired-text)", border: "1px solid var(--admin-expired-border)" }}
+                        >
+                          Banned
+                        </span>
+                      )}
+                      <StatusPill status={m.membership_status} />
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: A.muted }}>
+                      {m.contact_number ?? m.email}
+                      {m.plan_name && ` · ${m.plan_name}`}
+                      {m.end_date && ` · Exp ${m.end_date}`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0 ml-3">
+                  <GhostBtn onClick={() => openRenewDialog(m)} color={A.primary} disabled={m.profile_status === "rejected"}>
+                    Renew
+                  </GhostBtn>
+                  {m.membership_id && m.membership_status === "active" && m.profile_status !== "rejected" && (
+                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "frozen")} color="var(--admin-frozen-text)">
+                      <Snowflake className="h-3 w-3" />
+                      Freeze
+                    </GhostBtn>
+                  )}
+                  {m.membership_id && (m.membership_status === "frozen" || m.membership_status === "expired") && m.profile_status !== "rejected" && (
+                    <GhostBtn onClick={() => handleStatusChange(m.membership_id!, "active")} color="var(--admin-active-text)">
+                      <Play className="h-3 w-3" />
+                      Activate
+                    </GhostBtn>
+                  )}
+                  {m.profile_status === "rejected" ? (
+                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "active")} color="var(--admin-active-text)">
+                      Unban
+                    </GhostBtn>
+                  ) : (
+                    <GhostBtn onClick={() => handleProfileStatusChange(m.profile_id, "rejected")} color="var(--admin-expired-text)">
+                      Ban
+                    </GhostBtn>
+                  )}
+                </div>
+              </div>
+            </ACard>
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs" style={{ color: A.muted }}>Showing {filtered.length} of {members.length} members</p>
+
+      <Modal
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        title={selectedMember?.name ?? "Member Details"}
+        width={560}
+      >
+        {selectedMember && (
+          <div className="space-y-4">
+            <div
+              className="grid grid-cols-2 gap-3 rounded-xl p-4 text-sm"
+              style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
+            >
+              <div><p style={{ color: A.muted }}>Email</p><p style={{ color: A.text }}>{selectedMember.email}</p></div>
+              <div><p style={{ color: A.muted }}>Contact</p><p style={{ color: A.text }}>{selectedMember.contact_number ?? "N/A"}</p></div>
+              <div><p style={{ color: A.muted }}>Plan</p><p style={{ color: A.text }}>{selectedMember.plan_name ?? "No plan"}</p></div>
+              <div><p style={{ color: A.muted }}>Status</p><StatusPill status={selectedMember.membership_status} /></div>
+              <div><p style={{ color: A.muted }}>Start</p><p style={{ color: A.text }}>{selectedMember.start_date ?? "-"}</p></div>
+              <div><p style={{ color: A.muted }}>End</p><p style={{ color: A.text }}>{selectedMember.end_date ?? "-"}</p></div>
+              <div><p style={{ color: A.muted }}>Member Since</p><p style={{ color: A.text }}>{selectedMember.created_at ? selectedMember.created_at.split("T")[0] : "-"}</p></div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium" style={{ color: A.muted }}>Payment History</p>
+              {selectedPayments.length === 0 ? (
+                <p className="text-xs" style={{ color: A.muted }}>No payments recorded.</p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {selectedPayments.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between rounded-lg px-3 py-2 text-xs"
+                      style={{ backgroundColor: A.surface2, border: `1px solid ${A.border}` }}
+                    >
+                      <span style={{ color: A.text }}>{p.plan_name}</span>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="rounded-full px-2 py-0.5"
+                          style={{
+                            backgroundColor: p.payment_method === "gcash" ? "#EFF6FF" : "#ECFDF3",
+                            color: p.payment_method === "gcash" ? "#2563EB" : "#16A34A",
+                            border: `1px solid ${p.payment_method === "gcash" ? "#BFDBFE" : "#BBF7D0"}`,
+                          }}
+                        >
+                          {p.payment_method}
+                        </span>
+                        <span className="font-semibold" style={{ color: A.text }}>₱{p.amount_paid.toLocaleString()}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={renewOpen}
+        onClose={() => {
+          setRenewOpen(false)
+          setRenewLoading(false)
+          setRenewMember(null)
+        }}
+        title="Renew Membership"
+        width={620}
+      >
+        {renewMember && (
+          <div className="space-y-5">
+            <SummaryBox
+              rows={[
+                { label: "Member", value: renewMember.name },
+                { label: "Current Plan", value: renewMember.plan_name ?? "No plan" },
+                { label: "Expiry", value: renewMember.end_date ?? "-" },
+              ]}
+            />
+
+            <ChoicePicker
+              label="Membership Plan"
+              value={renewPlanId}
+              onChange={setRenewPlanId}
+              options={renewPlans.map((plan) => ({
+                value: plan.id,
+                label: plan.name,
+                sub: `${plan.duration_days} days`,
+                right: `₱${plan.price.toLocaleString()}`,
+              }))}
+            />
+
+            <ChoicePicker
+              label="Payment Method"
+              value={renewPaymentMethod}
+              onChange={(v: "cash" | "gcash") => setRenewPaymentMethod(v)}
+              options={[
+                { value: "cash", label: "Cash" },
+                { value: "gcash", label: "GCash" },
+              ]}
+            />
+
+            {renewPlanId && (
+              <SummaryBox
+                rows={[
+                  { label: "Selected Plan", value: renewPlans.find((p) => p.id === renewPlanId)?.name ?? "-" },
+                  { label: "Method", value: renewPaymentMethod === "cash" ? "Cash" : "GCash" },
+                  { label: "Amount", value: `₱${(renewPlans.find((p) => p.id === renewPlanId)?.price ?? 0).toLocaleString()}` },
+                ]}
+              />
+            )}
+
+            <PrimaryBtn
+              onClick={handleRenewMembership}
+              disabled={renewLoading || !renewPlanId || renewPlans.length === 0}
+            >
+              {renewLoading ? "Renewing..." : "Renew and Record Payment"}
+            </PrimaryBtn>
+          </div>
+        )}
+      </Modal>
+
+      <OnboardMemberModal
+        open={onboardOpen}
+        onClose={() => setOnboardOpen(false)}
+        onSuccess={() => void fetchMembers(true)}
+      />
+    </div>
+  )
+}
+</file>
+
 <file path="app/login/page.tsx">
 'use client';
 
@@ -34913,6 +34916,15 @@ export const Constants = {
 } as const
 </file>
 
+<file path="next-env.d.ts">
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/types/routes.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+</file>
+
 <file path="app/admin/layout.tsx">
 'use client';
 
@@ -35273,13 +35285,237 @@ export default function AdminLayout({
 }
 </file>
 
-<file path="next-env.d.ts">
-/// <reference types="next" />
-/// <reference types="next/image-types/global" />
-import "./.next/dev/types/routes.d.ts";
+<file path="middleware.ts">
+import { createServerClient } from "@supabase/ssr"
+import { NextResponse, type NextRequest } from "next/server"
 
-// NOTE: This file should not be edited
-// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+const LOGIN_ORIGIN_COOKIE_KEY = "stren.auth.loginOriginPath"
+const GYM_LOGIN_PATH_REGEX = /^\/gym\/[^/]+\/login$/
+
+function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
+  // In App Router client-side navigations, document-level policies may persist from
+  // the initial page load. Keep camera available to same-origin so /kiosk can start
+  // without requiring a hard refresh after navigating from /admin or /landing.
+  const cameraPolicy = 'camera=(self)'
+
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-XSS-Protection', '1; mode=block')
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  response.headers.set(
+    'Permissions-Policy',
+    `${cameraPolicy}, microphone=(), geolocation=()`,
+  )
+  return response
+}
+
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  if (!error) return false
+
+  const reason = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message?: unknown }).message ?? "")
+        : ""
+
+  const normalized = reason.toLowerCase()
+  return (
+    normalized.includes("invalid refresh token") ||
+    normalized.includes("refresh token not found") ||
+    normalized.includes("missing refresh token")
+  )
+}
+
+function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
+  const authCookies = request.cookies
+    .getAll()
+    .filter((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"))
+
+  authCookies.forEach((cookie) => {
+    response.cookies.set(cookie.name, "", {
+      path: "/",
+      expires: new Date(0),
+      maxAge: 0,
+    })
+  })
+}
+
+function getStoredLoginOriginPath(request: NextRequest): string | null {
+  const candidate = request.cookies.get(LOGIN_ORIGIN_COOKIE_KEY)?.value
+  if (!candidate) return null
+
+  if (candidate === "/login") return candidate
+  if (GYM_LOGIN_PATH_REGEX.test(candidate)) return candidate
+
+  return null
+}
+
+function resolveLoginPath(request: NextRequest, pathname: string): string {
+  const storedOriginPath = getStoredLoginOriginPath(request)
+  if (storedOriginPath) return storedOriginPath
+
+  if (pathname.startsWith("/member")) return "/gym-select"
+
+  return "/login"
+}
+
+function withLoginOriginCookie(response: NextResponse, pathname: string): NextResponse {
+  if (pathname === "/login") {
+    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, "/login", {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
+    })
+    return response
+  }
+
+  if (GYM_LOGIN_PATH_REGEX.test(pathname)) {
+    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, pathname, {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
+    })
+  }
+
+  return response
+}
+
+export async function middleware(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  const pathname = request.nextUrl.pathname
+
+  const isApiRoute = pathname.startsWith("/api")
+  const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
+  const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
+  const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
+  const isAuthCallbackRoute = pathname === "/auth/callback"
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/reset-password" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/")
+
+  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathname), pathname)
+
+  // API routes should return API status codes (401/403/etc.), not login redirects.
+  if (isApiRoute) {
+    return addSecurityHeaders(supabaseResponse, pathname)
+  }
+
+  // Public pages should not pay auth/profile lookup cost.
+  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute || isAuthCallbackRoute) {
+    return finalize(supabaseResponse)
+  }
+
+  if (isAuthRoute) {
+    let user = null
+    try {
+      const { data } = await supabase.auth.getUser()
+      user = data.user
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        clearSupabaseAuthCookies(request, supabaseResponse)
+        return finalize(supabaseResponse)
+      }
+      throw error
+    }
+
+    if (!user) return finalize(supabaseResponse)
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, status, gym_id")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (!profile || profile.status === "rejected") {
+      return finalize(supabaseResponse)
+    }
+
+    const redirectTo = profile.role === "member" ? "/member" : "/admin"
+    return finalize(NextResponse.redirect(new URL(redirectTo, request.url)))
+  }
+
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch (error) {
+    if (isInvalidRefreshTokenError(error)) {
+      const url = request.nextUrl.clone()
+      url.pathname = resolveLoginPath(request, pathname)
+      const redirect = NextResponse.redirect(url)
+      clearSupabaseAuthCookies(request, redirect)
+      return finalize(redirect)
+    }
+    throw error
+  }
+
+  // All other routes require auth
+  if (!user) {
+    const url = request.nextUrl.clone()
+    url.pathname = resolveLoginPath(request, pathname)
+    return finalize(NextResponse.redirect(url))
+  }
+
+  // Role-based access control
+  // Use maybeSingle — avoids 406 if profile row doesn't exist yet
+  const { data: profile } = await  supabase
+    .from("profiles")
+    .select("role, status, gym_id")
+    .eq("id", user.id)
+    .maybeSingle()
+
+  // No profile yet (trigger delay) or rejected — send to login
+  if (!profile || profile.status === "rejected") {
+    return finalize(NextResponse.redirect(new URL(resolveLoginPath(request, pathname), request.url)))
+  }
+
+  // Admin routes — only admin/staff/owner
+  if (pathname.startsWith("/admin")) {
+    if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
+      return finalize(NextResponse.redirect(new URL("/member", request.url)))
+    }
+  }
+
+  // Redirect stale /dashboard URLs to /admin
+  if (pathname.startsWith("/dashboard")) {
+    return finalize(NextResponse.redirect(new URL("/admin", request.url)))
+  }
+
+  if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
+  supabaseResponse.headers.set("x-user-role", profile.role)
+
+  return finalize(supabaseResponse)
+}
+
+export const config = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4)$).*)',
+  ],
+}
 </file>
 
 <file path="lib/auth-context.tsx">
@@ -35903,239 +36139,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const ctx = useContext(AuthContext)
   return ctx ?? FALLBACK_AUTH_CONTEXT
-}
-</file>
-
-<file path="middleware.ts">
-import { createServerClient } from "@supabase/ssr"
-import { NextResponse, type NextRequest } from "next/server"
-
-const LOGIN_ORIGIN_COOKIE_KEY = "stren.auth.loginOriginPath"
-const GYM_LOGIN_PATH_REGEX = /^\/gym\/[^/]+\/login$/
-
-function addSecurityHeaders(response: NextResponse, pathname: string): NextResponse {
-  // In App Router client-side navigations, document-level policies may persist from
-  // the initial page load. Keep camera available to same-origin so /kiosk can start
-  // without requiring a hard refresh after navigating from /admin or /landing.
-  const cameraPolicy = 'camera=(self)'
-
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
-  response.headers.set('X-XSS-Protection', '1; mode=block')
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-  response.headers.set(
-    'Permissions-Policy',
-    `${cameraPolicy}, microphone=(), geolocation=()`,
-  )
-  return response
-}
-
-function isInvalidRefreshTokenError(error: unknown): boolean {
-  if (!error) return false
-
-  const reason = typeof error === "string"
-    ? error
-    : error instanceof Error
-      ? error.message
-      : typeof error === "object" && error !== null && "message" in error
-        ? String((error as { message?: unknown }).message ?? "")
-        : ""
-
-  const normalized = reason.toLowerCase()
-  return (
-    normalized.includes("invalid refresh token") ||
-    normalized.includes("refresh token not found") ||
-    normalized.includes("missing refresh token")
-  )
-}
-
-function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
-  const authCookies = request.cookies
-    .getAll()
-    .filter((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"))
-
-  authCookies.forEach((cookie) => {
-    response.cookies.set(cookie.name, "", {
-      path: "/",
-      expires: new Date(0),
-      maxAge: 0,
-    })
-  })
-}
-
-function getStoredLoginOriginPath(request: NextRequest): string | null {
-  const candidate = request.cookies.get(LOGIN_ORIGIN_COOKIE_KEY)?.value
-  if (!candidate) return null
-
-  if (candidate === "/login") return candidate
-  if (GYM_LOGIN_PATH_REGEX.test(candidate)) return candidate
-
-  return null
-}
-
-function resolveLoginPath(request: NextRequest, pathname: string): string {
-  const storedOriginPath = getStoredLoginOriginPath(request)
-  if (storedOriginPath) return storedOriginPath
-
-  if (pathname.startsWith("/member")) return "/gym-select"
-
-  return "/login"
-}
-
-function withLoginOriginCookie(response: NextResponse, pathname: string): NextResponse {
-  if (pathname === "/login") {
-    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, "/login", {
-      path: "/",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
-    })
-    return response
-  }
-
-  if (GYM_LOGIN_PATH_REGEX.test(pathname)) {
-    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, pathname, {
-      path: "/",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
-    })
-  }
-
-  return response
-}
-
-export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const pathname = request.nextUrl.pathname
-
-  const isApiRoute = pathname.startsWith("/api")
-  const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
-  const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
-  const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
-  const isAuthCallbackRoute = pathname === "/auth/callback"
-  const isAuthRoute =
-    pathname === "/login" ||
-    pathname === "/reset-password" ||
-    pathname === "/signup" ||
-    pathname.startsWith("/signup/")
-
-  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathname), pathname)
-
-  // API routes should return API status codes (401/403/etc.), not login redirects.
-  if (isApiRoute) {
-    return addSecurityHeaders(supabaseResponse, pathname)
-  }
-
-  // Public pages should not pay auth/profile lookup cost.
-  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute || isAuthCallbackRoute) {
-    return finalize(supabaseResponse)
-  }
-
-  if (isAuthRoute) {
-    let user = null
-    try {
-      const { data } = await supabase.auth.getUser()
-      user = data.user
-    } catch (error) {
-      if (isInvalidRefreshTokenError(error)) {
-        clearSupabaseAuthCookies(request, supabaseResponse)
-        return finalize(supabaseResponse)
-      }
-      throw error
-    }
-
-    if (!user) return finalize(supabaseResponse)
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, status, gym_id")
-      .eq("id", user.id)
-      .maybeSingle()
-
-    if (!profile || profile.status === "rejected") {
-      return finalize(supabaseResponse)
-    }
-
-    const redirectTo = profile.role === "member" ? "/member" : "/admin"
-    return finalize(NextResponse.redirect(new URL(redirectTo, request.url)))
-  }
-
-  let user = null
-  try {
-    const { data } = await supabase.auth.getUser()
-    user = data.user
-  } catch (error) {
-    if (isInvalidRefreshTokenError(error)) {
-      const url = request.nextUrl.clone()
-      url.pathname = resolveLoginPath(request, pathname)
-      const redirect = NextResponse.redirect(url)
-      clearSupabaseAuthCookies(request, redirect)
-      return finalize(redirect)
-    }
-    throw error
-  }
-
-  // All other routes require auth
-  if (!user) {
-    const url = request.nextUrl.clone()
-    url.pathname = resolveLoginPath(request, pathname)
-    return finalize(NextResponse.redirect(url))
-  }
-
-  // Role-based access control
-  // Use maybeSingle — avoids 406 if profile row doesn't exist yet
-  const { data: profile } = await  supabase
-    .from("profiles")
-    .select("role, status, gym_id")
-    .eq("id", user.id)
-    .maybeSingle()
-
-  // No profile yet (trigger delay) or rejected — send to login
-  if (!profile || profile.status === "rejected") {
-    return finalize(NextResponse.redirect(new URL(resolveLoginPath(request, pathname), request.url)))
-  }
-
-  // Admin routes — only admin/staff/owner
-  if (pathname.startsWith("/admin")) {
-    if (profile.role !== "admin" && profile.role !== "staff" && profile.role !== "owner") {
-      return finalize(NextResponse.redirect(new URL("/member", request.url)))
-    }
-  }
-
-  // Redirect stale /dashboard URLs to /admin
-  if (pathname.startsWith("/dashboard")) {
-    return finalize(NextResponse.redirect(new URL("/admin", request.url)))
-  }
-
-  if (profile.gym_id) supabaseResponse.headers.set("x-gym-id", profile.gym_id)
-  supabaseResponse.headers.set("x-user-role", profile.role)
-
-  return finalize(supabaseResponse)
-}
-
-export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4)$).*)',
-  ],
 }
 </file>
 
