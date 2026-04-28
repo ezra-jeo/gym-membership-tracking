@@ -4,16 +4,28 @@ import { createServerSupabaseClient } from "@/lib/supabase-server"
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
-
-  if (!code) {
-    return NextResponse.redirect(new URL("/login?error=missing_code", requestUrl.origin))
-  }
+  const tokenHash = requestUrl.searchParams.get("token_hash")
+  const tokenType = requestUrl.searchParams.get("type")?.toLowerCase() ?? null
 
   const supabase = await createServerSupabaseClient()
-  const { error } = await supabase.auth.exchangeCodeForSession(code)
+  let authError: string | null = null
 
-  if (error) {
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error.message)}`, requestUrl.origin))
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (error) authError = error.message
+  } else if (tokenHash && tokenType) {
+    const otpType = tokenType as "magiclink" | "recovery" | "invite" | "email" | "signup" | "email_change"
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: otpType,
+    })
+    if (error) authError = error.message
+  } else {
+    authError = "missing_code"
+  }
+
+  if (authError) {
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(authError)}`, requestUrl.origin))
   }
 
   const {
@@ -42,5 +54,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/admin", requestUrl.origin))
   }
 
-  return NextResponse.redirect(new URL("/member", requestUrl.origin))
+  const shouldPromptPasswordSetup = tokenType === "magiclink" || tokenType === "email" || tokenType === "invite" || tokenType === "signup"
+  const memberTarget = shouldPromptPasswordSetup ? "/member?first_login=1" : "/member"
+  return NextResponse.redirect(new URL(memberTarget, requestUrl.origin))
 }

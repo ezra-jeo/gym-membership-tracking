@@ -65,9 +65,11 @@ export function MemberNotificationsPanel() {
   // Realtime — new notifications appear instantly
   useEffect(() => {
     if (!profile?.id) return;
-    const channel = supabase
-      .channel('member-notifications-' + profile.id)
-      .on('postgres_changes', {
+    const channelName = `member-notifications-${profile.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase.channel(channelName);
+      channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'notifications',
@@ -77,9 +79,17 @@ export function MemberNotificationsPanel() {
         if (newNotif.notification_type) {
           setNotifications((prev) => [newNotif, ...prev.slice(0, 29)]);
         }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      });
+      channel.subscribe();
+    } catch (error) {
+      console.error('Failed to initialize member notifications realtime channel', error);
+    }
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [profile?.id, supabase]);
 
   // Close on outside click

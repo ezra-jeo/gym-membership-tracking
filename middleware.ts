@@ -118,15 +118,26 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  const isApiRoute = pathname.startsWith("/api")
   const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
   const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
   const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
-  const isAuthRoute = pathname === "/login" || pathname === "/signup" || pathname.startsWith("/signup/")
+  const isAuthCallbackRoute = pathname === "/auth/callback"
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/reset-password" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/")
 
   const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathname), pathname)
 
+  // API routes should return API status codes (401/403/etc.), not login redirects.
+  if (isApiRoute) {
+    return addSecurityHeaders(supabaseResponse, pathname)
+  }
+
   // Public pages should not pay auth/profile lookup cost.
-  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute) {
+  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute || isAuthCallbackRoute) {
     return finalize(supabaseResponse)
   }
 

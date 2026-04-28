@@ -36,11 +36,14 @@ export function LoginForm({ gymCode }: LoginFormProps) {
   const supabase = useMemo(() => createClient(), []);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -63,6 +66,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
 
   const onSubmit = async (data: LoginFormData) => {
     setError('');
+    setMessage('');
     setIsLoading(true);
     try {
       const { email, password } = data;
@@ -119,6 +123,30 @@ export function LoginForm({ gymCode }: LoginFormProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = async () => {
+    const email = getValues('email')?.trim();
+    setError('');
+    setMessage('');
+
+    if (!email) {
+      setError('Enter your email first, then tap Forgot password.');
+      return;
+    }
+
+    setIsSendingReset(true);
+    const redirectTo = `${window.location.origin}/reset-password`;
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+
+    if (resetError) {
+      setError(resetError.message);
+      setIsSendingReset(false);
+      return;
+    }
+
+    setMessage('Password reset link sent. Check your email inbox.');
+    setIsSendingReset(false);
   };
 
   return (
@@ -203,6 +231,24 @@ export function LoginForm({ gymCode }: LoginFormProps) {
             {error}
           </p>
         )}
+
+        {message && (
+          <p className="text-sm font-medium" style={{ color: '#16A34A' }}>
+            {message}
+          </p>
+        )}
+
+        <div className="-mt-1 text-right">
+          <button
+            type="button"
+            onClick={() => void handleForgotPassword()}
+            disabled={isLoading || isSendingReset}
+            className="text-xs font-medium underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
+            {isSendingReset ? 'Sending reset link...' : 'Forgot password?'}
+          </button>
+        </div>
 
         <button
           type="submit"

@@ -54,13 +54,15 @@ function getFromAddress(): string {
 }
 
 /** Renders the QR payload to a base64 PNG data-URI (for inline embedding). */
-async function generateQrDataUri(payload: string): Promise<string> {
-  return QRCode.toDataURL(payload, {
+async function generateQrBase64Png(payload: string): Promise<string> {
+  const png = await QRCode.toBuffer(payload, {
+    type: "png",
     width: 240,
     margin: 2,
     color: { dark: "#1a1a1a", light: "#ffffff" },
     errorCorrectionLevel: "M",
   })
+  return png.toString("base64")
 }
 
 // ---------------------------------------------------------------------------
@@ -70,10 +72,10 @@ async function generateQrDataUri(payload: string): Promise<string> {
 function buildEmailHtml(params: {
   memberName: string
   gymName: string
-  qrDataUri: string
+  qrCid: string
   magicLink: string
 }): string {
-  const { memberName, gymName, qrDataUri, magicLink } = params
+  const { memberName, gymName, qrCid, magicLink } = params
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -118,7 +120,7 @@ function buildEmailHtml(params: {
                   <td align="center" style="padding:0 0 24px;">
                     <div style="display:inline-block;background:#ffffff;border:1px solid #e4e4e7;border-radius:10px;padding:16px;">
                       <img
-                        src="${qrDataUri}"
+                        src="cid:${qrCid}"
                         alt="Your gym check-in QR code"
                         width="200"
                         height="200"
@@ -156,6 +158,7 @@ function buildEmailHtml(params: {
                   </td>
                 </tr>
               </table>
+
             </td>
           </tr>
 
@@ -196,7 +199,7 @@ function buildEmailText(params: {
     `Your membership is active. Show your QR code at the kiosk to check in.`,
     `QR data: ${qrPayload}`,
     ``,
-    `Optionally, set up your Stren account (link valid 24 hours):`,
+    `Use the login link below to access your account:`,
     magicLink,
     ``,
     `If you did not request this, you can ignore this email.`,
@@ -212,26 +215,50 @@ export async function sendOnboardingEmail(
 ): Promise<SendResult> {
   const { to, memberName, gymName, qrPayload, magicLink } = payload
 
-  // Generate QR as an inline image so no separate CDN/storage needed.
-  const qrDataUri = await generateQrDataUri(qrPayload)
+  // Use CID attachment since many email clients block data URI images.
+  const qrCid = "member-qr@stren.app"
+  const qrPngBase64 = await generateQrBase64Png(qrPayload)
 
-  const html = buildEmailHtml({ memberName, gymName, qrDataUri, magicLink })
+  const html = buildEmailHtml({ memberName, gymName, qrCid, magicLink })
   const text = buildEmailText({ memberName, gymName, qrPayload, magicLink })
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getResendKey()}`,
-    },
-    body: JSON.stringify({
-      from: getFromAddress(),
-      to: [to],
-      subject: `Your ${gymName} membership is ready`,
-      html,
-      text,
-    }),
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12000)
+
+  let res: Response
+  try {
+    res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getResendKey()}`,
+      },
+      body: JSON.stringify({
+        from: getFromAddress(),
+        to: [to],
+        subject: `Your ${gymName} membership is ready`,
+        html,
+        text,
+        attachments: [
+          {
+            filename: "membership-qr.png",
+            content: qrPngBase64,
+            contentId: qrCid,
+            contentType: "image/png",
+            disposition: "inline",
+          },
+        ],
+      }),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return { ok: false, error: "Resend request timed out." }
+    }
+    return { ok: false, error: error instanceof Error ? error.message : "Email send failed." }
+  } finally {
+    clearTimeout(timeout)
+  }
 
   if (!res.ok) {
     let message = `Resend error ${res.status}`

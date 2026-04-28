@@ -13,7 +13,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { createAdminClient } from "@/lib/supabase-admin"
-import { sendOnboardingEmail } from "@/lib/email"
+import { sendOnboardingEmail, type SendResult } from "@/lib/email"
 
 type ManagerRole = "owner" | "admin" | "staff"
 const MANAGER_ROLES: ManagerRole[] = ["owner", "admin", "staff"]
@@ -34,12 +34,32 @@ function computeEndDate(startDate: string, durationDays: number): string {
   return dt.toISOString().slice(0, 10)
 }
 
-function getSiteUrl(): string {
+function getSiteUrl(request: Request): string {
   const envUrl =
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     process.env.NEXT_PUBLIC_APP_URL?.trim()
   if (envUrl) return envUrl.replace(/\/$/, "")
+
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host")
+  const proto = request.headers.get("x-forwarded-proto") || "http"
+  if (host) return `${proto}://${host}`.replace(/\/$/, "")
+
   return "http://localhost:3000"
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        resolve(fallback)
+      })
+  })
 }
 
 async function getCurrentUserWithRole() {
@@ -123,58 +143,49 @@ export async function POST(request: Request) {
   const gymName = gymResult.data?.name ?? "Your Gym"
 
   // -------------------------------------------------------------------------
-  // Resolve member identity — create if new, reuse if existing
+  // Resolve member identity — onboarding requires a new unique email.
+  // Existing members should use the renew/status flows instead.
   // -------------------------------------------------------------------------
-
-  let memberId: string | null = null
 
   const { data: existingProfile } = await supabase
     .from("profiles")
-    .select("id, gym_id")
+    .select("id, gym_id, name")
     .eq("email", body.email)
     .maybeSingle()
 
   if (existingProfile) {
-    if (
-      existingProfile.gym_id &&
-      existingProfile.gym_id !== profile.gym_id
-    ) {
-      return NextResponse.json(
-        { error: "This email is already assigned to another gym." },
-        { status: 409 },
-      )
-    }
-    memberId = existingProfile.id
-  } else {
-    const { data: createdAuth, error: createAuthError } =
-      await admin.auth.admin.createUser({
-        email: body.email,
-        email_confirm: true,
-        user_metadata: {
-          name: body.name,
-          role: "member",
-        },
-      })
-
-    if (createAuthError || !createdAuth.user) {
-      return NextResponse.json(
-        {
-          error:
-            createAuthError?.message ?? "Failed to create auth user.",
-        },
-        { status: 400 },
-      )
-    }
-
-    memberId = createdAuth.user.id
-  }
-
-  if (!memberId) {
+    const isSameGym = !existingProfile.gym_id || existingProfile.gym_id === profile.gym_id
     return NextResponse.json(
-      { error: "Unable to resolve member identity." },
-      { status: 500 },
+      {
+        error: isSameGym
+          ? `This email is already a member in your gym (${existingProfile.name ?? "existing member"}). Use Renew for existing members.`
+          : "This email is already assigned to another gym.",
+      },
+      { status: 409 },
     )
   }
+
+  const { data: createdAuth, error: createAuthError } =
+    await admin.auth.admin.createUser({
+      email: body.email,
+      email_confirm: true,
+      user_metadata: {
+        name: body.name,
+        role: "member",
+      },
+    })
+
+  if (createAuthError || !createdAuth.user) {
+    return NextResponse.json(
+      {
+        error:
+          createAuthError?.message ?? "Failed to create auth user.",
+      },
+      { status: 400 },
+    )
+  }
+
+  const memberId: string = createdAuth.user.id
 
   // -------------------------------------------------------------------------
   // Upsert profile
@@ -259,7 +270,7 @@ export async function POST(request: Request) {
   // Generate magic link
   // -------------------------------------------------------------------------
 
-  const siteUrl = getSiteUrl()
+  const siteUrl = getSiteUrl(request)
   const redirectTo = `${siteUrl}/auth/callback`
 
   const { data: linkData, error: linkError } =
@@ -290,6 +301,7 @@ export async function POST(request: Request) {
         membershipId: createdMembership.id,
         qrCode: qrPayload,
         magicLink: null,
+        redirectTo,
         emailError:
           linkError?.message ??
           "Magic link generation failed; member was created successfully.",
@@ -304,13 +316,22 @@ export async function POST(request: Request) {
   // Send email
   // -------------------------------------------------------------------------
 
-  const emailResult = await sendOnboardingEmail({
-    to: body.email,
-    memberName: body.name,
-    gymName,
-    qrPayload,
-    magicLink,
-  })
+  const emailTimeoutResult: SendResult = {
+    ok: false,
+    error: "Email send timed out. Share the magic link manually.",
+  }
+
+  const emailResult = await withTimeout(
+    sendOnboardingEmail({
+      to: body.email,
+      memberName: body.name,
+      gymName,
+      qrPayload,
+      magicLink,
+    }),
+    15000,
+    emailTimeoutResult,
+  )
 
   // Log the onboarding event regardless of email outcome.
   await admin.from("member_onboarding_events").insert({
@@ -332,6 +353,7 @@ export async function POST(request: Request) {
         membershipId: createdMembership.id,
         qrCode: qrPayload,
         magicLink,
+        redirectTo,
         emailError: `Member created but email failed to send: ${emailResult.error}. Share the magic link above manually.`,
       },
       { status: 207 },
@@ -347,6 +369,7 @@ export async function POST(request: Request) {
     membershipId: createdMembership.id,
     qrCode: qrPayload,
     magicLink,
+    redirectTo,
     emailSent: true,
   })
 }
