@@ -12,8 +12,8 @@ import {
   Info,
   Mail,
   Shield,
+  KeyRound,
   AlertTriangle,
-  Bell,
   Flame,
   BellOff,
 } from 'lucide-react';
@@ -155,11 +155,15 @@ function Divider() {
 }
 
 export default function SettingsPage() {
-  const { profile, signOut, isSigningOut } = useAuth();
+  const { profile, signOut, isSigningOut, needsPasswordSetup, completePasswordSetup, signIn } = useAuth();
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordValue, setPasswordValue] = useState('');
+  const [confirmPasswordValue, setConfirmPasswordValue] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
     inactivity_nudges_enabled: true,
     streak_notifications_enabled: true,
@@ -253,6 +257,49 @@ export default function SettingsPage() {
     await signOut();
   }
 
+  function openPasswordModal() {
+    setPasswordValue('');
+    setConfirmPasswordValue('');
+    setShowPasswordModal(true);
+  }
+
+  async function handleSavePassword() {
+    if (!profile?.id || isSavingPassword) return;
+
+    if (passwordValue.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (passwordValue !== confirmPasswordValue) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: passwordValue });
+    const isTransientPasswordRotationError = Boolean(error && 'status' in error && (error as { status?: number }).status === 406)
+    if (error && !isTransientPasswordRotationError) {
+      setIsSavingPassword(false);
+      toast.error(error.message || 'Failed to update password.');
+      return;
+    }
+
+    const signInResult = await signIn(profile.email, passwordValue);
+    setIsSavingPassword(false);
+
+    if (signInResult.error) {
+      toast.error(signInResult.error || 'Password updated, but session refresh failed. Please sign in again.');
+      return;
+    }
+
+    completePasswordSetup(profile.id);
+    setShowPasswordModal(false);
+    setPasswordValue('');
+    setConfirmPasswordValue('');
+    toast.success('Password updated successfully.');
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -264,6 +311,32 @@ export default function SettingsPage() {
           Account and app preferences
         </p>
       </div>
+
+      {needsPasswordSetup && (
+        <div
+          className="rounded-2xl border px-4 py-3.5"
+          style={{ borderColor: 'var(--color-warning)', backgroundColor: 'var(--color-warning-bg)' }}
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} style={{ color: 'var(--color-warning)', marginTop: 1 }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                One-time login detected
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
+                Your password is not set yet. For security, set a password now so you can log in without a magic link.
+              </p>
+              <button
+                onClick={openPasswordModal}
+                className="mt-2 text-xs font-semibold underline underline-offset-2 disabled:opacity-50"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                Set password in app
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Account */}
       <SectionCard title="Account">
@@ -285,6 +358,14 @@ export default function SettingsPage() {
           label="Edit Profile"
           sublabel="Name, contact number, QR code"
           onClick={() => router.push('/member/profile')}
+        />
+        <Divider />
+        <SettingsRow
+          icon={<KeyRound size={17} />}
+          label="Change Password"
+          sublabel="Update your password without leaving the app"
+          onClick={openPasswordModal}
+          hideChevron
         />
       </SectionCard>
 
@@ -390,6 +471,78 @@ export default function SettingsPage() {
                 style={{ backgroundColor: 'var(--color-danger)', color: 'white' }}
               >
                 {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowPasswordModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+            style={{ backgroundColor: 'var(--color-white)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Change Password</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                Choose a new password for email sign-in. This replaces the temporary login link.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  placeholder="At least 6 characters"
+                  disabled={isSavingPassword}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                  style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPasswordValue}
+                  onChange={(e) => setConfirmPasswordValue(e.target.value)}
+                  placeholder="Repeat password"
+                  disabled={isSavingPassword}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+                  style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPasswordModal(false)}
+                disabled={isSavingPassword}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
+                style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-secondary)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePassword}
+                disabled={isSavingPassword}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
+              >
+                {isSavingPassword ? 'Saving...' : 'Save Password'}
               </button>
             </div>
           </div>

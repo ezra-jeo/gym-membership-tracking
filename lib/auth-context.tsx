@@ -1,7 +1,8 @@
 "use client"
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { Suspense } from "react"
 import { createClient } from "@/lib/supabase"
 import { withTimeout } from "@/lib/async-guard"
 import type { User } from "@supabase/supabase-js"
@@ -12,15 +13,83 @@ const NAVIGATION_FAILSAFE_MS = 2000
 const PROFILE_FETCH_TIMEOUT_MS = 7000
 const PROFILE_HYDRATION_DEDUPE_MS = 2500
 const LOGIN_ORIGIN_STORAGE_KEY = "stren.auth.loginOriginPath"
+const PASSWORD_SETUP_DONE_PREFIX = "stren.auth.passwordSetupDone:"
+const PASSWORD_SETUP_PENDING_PREFIX = "stren.auth.passwordSetupPending:"
+
+function getHashSessionTokens(): { accessToken: string; refreshToken: string; linkType: string | null } | null {
+  if (typeof window === "undefined") return null
+  if (!window.location.hash) return null
+
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash
+  const params = new URLSearchParams(hash)
+
+  const accessToken = params.get("access_token")?.trim()
+  const refreshToken = params.get("refresh_token")?.trim()
+  const tokenType = params.get("token_type")?.trim().toLowerCase()
+  const linkType = params.get("type")?.trim().toLowerCase() ?? null
+
+  if (!accessToken || !refreshToken || tokenType !== "bearer") return null
+  return { accessToken, refreshToken, linkType }
+}
+
+function clearUrlHash() {
+  if (typeof window === "undefined") return
+  const cleanUrl = `${window.location.pathname}${window.location.search}`
+  window.history.replaceState({}, "", cleanUrl)
+}
+
+function resolvePostAuthPath(role?: string | null): string {
+  if (role === "owner" || role === "admin" || role === "staff") return "/admin"
+  return "/member"
+}
+
+function readLocalStorageFlag(key: string): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    return window.localStorage.getItem(key) === "1"
+  } catch {
+    return false
+  }
+}
+
+function writeLocalStorageFlag(key: string, value: boolean) {
+  if (typeof window === "undefined") return
+  try {
+    if (value) {
+      window.localStorage.setItem(key, "1")
+    } else {
+      window.localStorage.removeItem(key)
+    }
+  } catch {
+    // Ignore storage failures in restricted/private environments.
+  }
+}
+
+function markPasswordSetupPending(userId: string, pending: boolean) {
+  writeLocalStorageFlag(`${PASSWORD_SETUP_PENDING_PREFIX}${userId}`, pending)
+}
+
+function markPasswordSetupDone(userId: string, done: boolean) {
+  writeLocalStorageFlag(`${PASSWORD_SETUP_DONE_PREFIX}${userId}`, done)
+}
+
+function computeNeedsPasswordSetup(userId: string | null): boolean {
+  if (!userId) return false
+  const pending = readLocalStorageFlag(`${PASSWORD_SETUP_PENDING_PREFIX}${userId}`)
+  const done = readLocalStorageFlag(`${PASSWORD_SETUP_DONE_PREFIX}${userId}`)
+  return pending && !done
+}
 
 interface AuthContextValue {
   user: User | null
   profile: Profile | null
   isLoading: boolean
   isSigningOut: boolean
+  needsPasswordSetup: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null; user: User | null; profile: Profile | null }>
   signUp: (email: string, password: string, name: string, role?: "member" | "admin") => Promise<{ error: string | null }>
   signOut: () => Promise<void>
+  completePasswordSetup: (userId?: string | null) => void
   refreshProfile: () => Promise<void>
 }
 
@@ -31,9 +100,11 @@ const FALLBACK_AUTH_CONTEXT: AuthContextValue = {
   profile: null,
   isLoading: false,
   isSigningOut: false,
+  needsPasswordSetup: false,
   signIn: async () => ({ error: "Authentication unavailable.", user: null, profile: null }),
   signUp: async () => ({ error: "Authentication unavailable." }),
   signOut: async () => {},
+  completePasswordSetup: () => {},
   refreshProfile: async () => {},
 }
 
@@ -137,15 +208,19 @@ async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): P
   throw lastError ?? new Error("Unknown lock error")
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+// Inner component — contains all the hooks including useSearchParams.
+// Must be wrapped in <Suspense> by the parent (AuthProvider below).
+function AuthProviderInner({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false)
   const isRecoveringAuthRef = useRef(false)
   const recentProfileHydrationRef = useRef<{ userId: string; at: number } | null>(null)
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   const shouldSkipAuthBootstrap = useMemo(() => {
     if (!pathname) return false
@@ -156,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       pathname.startsWith("/landing") ||
       pathname.startsWith("/gym") ||
       pathname.startsWith("/login") ||
+      pathname.startsWith("/reset-password") ||
       pathname.startsWith("/signup")
     )
   }, [pathname])
@@ -168,6 +244,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getClient = () => supabase ?? createClient()
 
+  useEffect(() => {
+    const hashTokens = getHashSessionTokens()
+    if (!hashTokens) return
+
+    let active = true
+    const client = createClient()
+
+    const applyHashSession = async () => {
+      setIsLoading(true)
+
+      const { data, error } = await client.auth.setSession({
+        access_token: hashTokens.accessToken,
+        refresh_token: hashTokens.refreshToken,
+      })
+
+      clearUrlHash()
+
+      if (!active) return
+
+      if (error || !data.session?.user) {
+        setUser(null)
+        setProfile(null)
+        setNeedsPasswordSetup(false)
+        setIsLoading(false)
+        router.replace(`/login?error=${encodeURIComponent(error?.message ?? "invalid_magic_link_session")}`)
+        return
+      }
+
+      setUser(data.session.user)
+      const isRecoveryLink = hashTokens.linkType === "recovery"
+      if (isRecoveryLink || hashTokens.linkType === "magiclink" || hashTokens.linkType === "email" || hashTokens.linkType === "invite") {
+        markPasswordSetupPending(data.session.user.id, true)
+      }
+      setNeedsPasswordSetup(computeNeedsPasswordSetup(data.session.user.id))
+      const hydratedProfile = await fetchProfile(data.session.user.id, client)
+      if (!active) return
+
+      if (isRecoveryLink) {
+        if (!pathname?.startsWith("/reset-password")) {
+          router.replace("/reset-password")
+        }
+        return
+      }
+
+      const target = resolvePostAuthPath(hydratedProfile?.role)
+      if (pathname !== target) {
+        router.replace(target)
+      }
+    }
+
+    void applyHashSession()
+
+    return () => {
+      active = false
+    }
+  }, [pathname, router])
+
+  useEffect(() => {
+    if (!user?.id) return
+    if (searchParams?.get("first_login") !== "1") return
+
+    markPasswordSetupPending(user.id, true)
+    setNeedsPasswordSetup(computeNeedsPasswordSetup(user.id))
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.delete("first_login")
+    const nextQuery = nextParams.toString()
+    const targetPath = pathname ?? resolvePostAuthPath(profile?.role)
+    router.replace(nextQuery ? `${targetPath}?${nextQuery}` : targetPath)
+  }, [pathname, profile?.role, router, searchParams, user?.id])
+
   const recoverFromInvalidRefreshToken = useCallback(async (client = supabase ?? createClient()) => {
     if (isRecoveringAuthRef.current) return
     isRecoveringAuthRef.current = true
@@ -179,6 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setUser(null)
       setProfile(null)
+      setNeedsPasswordSetup(false)
       setIsLoading(false)
       isRecoveringAuthRef.current = false
     }
@@ -222,6 +370,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const currentUser = session?.user ?? null
       setUser(currentUser)
+      setNeedsPasswordSetup(computeNeedsPasswordSetup(currentUser?.id ?? null))
       if (currentUser) {
         const recentHydration = recentProfileHydrationRef.current
         const now = Date.now()
@@ -262,6 +411,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasResolved = true
         const currentUser = data.user ?? null
         setUser(currentUser)
+        setNeedsPasswordSetup(computeNeedsPasswordSetup(currentUser?.id ?? null))
 
         if (currentUser) {
           await fetchProfile(currentUser.id, supabase)
@@ -322,6 +472,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         2,
       )
 
+      const profileData = data as (typeof data & {
+        avatar_updated_at?: string | null
+        avatar_change_locked_until?: string | null
+        avatar_change_count?: number | null
+      }) | null
+
       if (error) {
         if (isInvalidRefreshTokenError(error)) {
           await recoverFromInvalidRefreshToken(client)
@@ -332,19 +488,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null
       }
 
-      if (data) {
+      if (profileData) {
         recentProfileHydrationRef.current = { userId, at: Date.now() }
         built = {
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          contactNumber: data.contact_number,
-          role: data.role ?? "member",
-          status: data.status ?? "active",
-          gymId: data.gym_id ?? null,
-          avatarUrl: data.avatar_url,
-          qrCode: data.qr_code ?? "",
-          createdAt: data.created_at ?? new Date().toISOString(),
+          id: profileData.id,
+          email: profileData.email,
+          name: profileData.name,
+          contactNumber: profileData.contact_number,
+          role: profileData.role ?? "member",
+          status: profileData.status ?? "active",
+          gymId: profileData.gym_id ?? null,
+          avatarUrl: profileData.avatar_url,
+          avatarUpdatedAt: profileData.avatar_updated_at ?? null,
+          avatarChangeLockedUntil: profileData.avatar_change_locked_until ?? null,
+          avatarChangeCount: profileData.avatar_change_count ?? 0,
+          qrCode: profileData.qr_code ?? "",
+          createdAt: profileData.created_at ?? new Date().toISOString(),
         }
         setProfile(built)
       } else {
@@ -366,6 +525,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.user) {
       setIsLoading(true)
       setUser(data.user)
+      markPasswordSetupDone(data.user.id, true)
+      markPasswordSetupPending(data.user.id, false)
+      setNeedsPasswordSetup(false)
       fetchedProfile = await fetchProfile(data.user.id, client)
     }
 
@@ -415,6 +577,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setUser(null)
       setProfile(null)
+      setNeedsPasswordSetup(false)
       setIsLoading(false)
       setIsSigningOut(false)
       try {
@@ -436,10 +599,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) await fetchProfile(user.id, getClient())
   }
 
+  function completePasswordSetup(userId?: string | null) {
+    const targetUserId = userId ?? user?.id ?? null
+    if (!targetUserId) return
+
+    markPasswordSetupDone(targetUserId, true)
+    markPasswordSetupPending(targetUserId, false)
+
+    if (user?.id === targetUserId) {
+      setNeedsPasswordSetup(false)
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, profile, isLoading, isSigningOut, signIn, signUp, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, isLoading, isSigningOut, needsPasswordSetup, signIn, signUp, signOut, completePasswordSetup, refreshProfile }}>
       {children}
     </AuthContext.Provider>
+  )
+}
+
+// AuthProvider wraps the inner component in Suspense so that useSearchParams()
+// inside AuthProviderInner is covered by a boundary, satisfying Next.js's requirement.
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <AuthProviderInner>{children}</AuthProviderInner>
+    </Suspense>
   )
 }
 

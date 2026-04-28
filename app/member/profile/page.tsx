@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
-import { LogOut, Edit2, Save, X } from 'lucide-react';
+import { Camera, Edit2, Lock, LogOut, RotateCcw, Save, Upload, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
@@ -11,12 +11,325 @@ import { PageSkeleton } from '@/components/ui/loading-screen';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { profileEditSchema } from '@/lib/validations';
+import { GhostBtn, PrimaryBtn } from '@/lib/admin-ui';
+import type { Profile } from '@/lib/types';
 import type { z } from 'zod';
 
 type ProfileEditFormData = z.infer<typeof profileEditSchema>;
 
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
+}
+
+function toDisplayAvatarUrl(avatarUrl: string | null, updatedAt: string | null): string {
+  if (!avatarUrl) return '';
+  if (!updatedAt) return avatarUrl;
+  const bust = `t=${encodeURIComponent(String(new Date(updatedAt).getTime()))}`;
+  return avatarUrl.includes('?') ? `${avatarUrl}&${bust}` : `${avatarUrl}?${bust}`;
+}
+
+function formatLockDate(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function isFutureDate(iso: string | null): boolean {
+  if (!iso) return false;
+  return new Date(iso).getTime() > Date.now();
+}
+
+function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  return fetch(dataUrl).then((response) => response.blob());
+}
+
+function buildAvatarAttemptPath(userId: string): string {
+  const random = Math.random().toString(36).slice(2);
+  return `avatars/${userId}/${Date.now()}-${random}.jpg`;
+}
+
+function AvatarSection({ profile, refreshProfile }: { profile: Profile; refreshProfile: () => Promise<void> }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [avatarUrl, setAvatarUrl] = useState(() => toDisplayAvatarUrl(profile.avatarUrl, profile.avatarUpdatedAt));
+  const [lockedUntil, setLockedUntil] = useState<string | null>(profile.avatarChangeLockedUntil);
+  const [draftDataUrl, setDraftDataUrl] = useState('');
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraSaving, setCameraSaving] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    setAvatarUrl(toDisplayAvatarUrl(profile.avatarUrl, profile.avatarUpdatedAt));
+    setLockedUntil(profile.avatarChangeLockedUntil);
+  }, [profile.avatarChangeLockedUntil, profile.avatarUpdatedAt, profile.avatarUrl]);
+
+  useEffect(() => {
+    if (isFutureDate(lockedUntil)) {
+      setStatusNote(`Avatar change is locked until ${formatLockDate(lockedUntil)}.`);
+    }
+  }, [lockedUntil]);
+
+  useEffect(() => {
+    return () => {
+      const stream = streamRef.current;
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  async function stopCamera() {
+    const stream = streamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  async function startCamera() {
+    if (isFutureDate(lockedUntil)) {
+      setStatusNote(`Avatar change is locked until ${formatLockDate(lockedUntil)}.`);
+      return;
+    }
+    setStatusNote('');
+    setCameraError('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraActive(true);
+      setDraftDataUrl('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to access camera';
+      setCameraError(message);
+      toast.error(message);
+    }
+  }
+
+  async function capturePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.drawImage(video, 0, 0, width, height);
+    setDraftDataUrl(canvas.toDataURL('image/jpeg', 0.92));
+    await stopCamera();
+  }
+
+  async function handleFileSelect(file: File | null) {
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error('Photo must be 5MB or smaller');
+      return;
+    }
+
+    await stopCamera();
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDraftDataUrl(String(reader.result ?? ''));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveAvatar() {
+    if (!draftDataUrl) return;
+
+    setCameraSaving(true);
+    setCameraError('');
+    setStatusNote('');
+    try {
+      const response = await fetch('/api/member/avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ avatarDataUrl: draftDataUrl }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        updated?: boolean
+        nextAllowedAt?: string | null
+        message?: string
+        error?: string
+        avatarUrl?: string
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to update avatar');
+      }
+
+      if (!payload.updated) {
+        if (payload.nextAllowedAt) {
+          setLockedUntil(payload.nextAllowedAt);
+        }
+        setStatusNote(payload.message ?? 'Avatar change is on cooldown.');
+        toast.warning(payload.message ?? 'Avatar change is on cooldown.');
+        return;
+      }
+
+      const publicUrl = payload.avatarUrl ?? profile.avatarUrl ?? '';
+      setAvatarUrl(toDisplayAvatarUrl(publicUrl, new Date().toISOString()));
+      setLockedUntil(payload.nextAllowedAt ?? null);
+      setDraftDataUrl('');
+      fileInputRef.current && (fileInputRef.current.value = '');
+      setStatusNote(payload.message ?? 'Avatar updated successfully.');
+      toast.success(payload.message ?? 'Avatar updated successfully.');
+      void refreshProfile();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update avatar';
+      setCameraError(message);
+      setStatusNote(message);
+      toast.error(message);
+    } finally {
+      setCameraSaving(false);
+    }
+  }
+
+  const locked = isFutureDate(lockedUntil);
+  const displayUrl = draftDataUrl || avatarUrl;
+
+  return (
+    <div className="rounded-xl p-5 border" style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}>
+      <div className="flex flex-col items-center text-center gap-3">
+        <div className="relative">
+          <div
+            className="h-22 w-22 rounded-full overflow-hidden flex items-center justify-center text-xl font-bold"
+            style={{ backgroundColor: 'var(--color-primary-glow)', color: 'var(--color-primary)' }}
+          >
+            {displayUrl ? (
+              <img src={displayUrl} alt={profile.name} className="h-full w-full object-cover" />
+            ) : (
+              getInitials(profile.name)
+            )}
+          </div>
+          {locked && (
+            <div className="absolute -bottom-1 -right-1 rounded-full p-1.5" style={{ backgroundColor: 'var(--color-danger)', color: 'white' }}>
+              <Lock size={12} />
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{profile.name}</p>
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{profile.email}</p>
+        </div>
+
+        {locked ? (
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            Photo can be changed on {formatLockDate(lockedUntil)}
+          </p>
+        ) : draftDataUrl ? (
+          <div className="w-full space-y-3">
+            <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-surface)' }}>
+              <img src={draftDataUrl} alt="New avatar preview" className="h-56 w-full object-cover" />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              After saving, you won&apos;t be able to change this for 14 days.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <GhostBtn onClick={() => { setDraftDataUrl(''); void startCamera(); }}>
+                Retake
+              </GhostBtn>
+              <PrimaryBtn onClick={() => void saveAvatar()} disabled={cameraSaving}>
+                {cameraSaving ? 'Saving...' : 'Save photo'}
+              </PrimaryBtn>
+            </div>
+          </div>
+        ) : cameraActive ? (
+          <div className="w-full space-y-3">
+            <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-surface)' }}>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-56 w-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}
+              />
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <GhostBtn onClick={() => void stopCamera()}>
+                Cancel
+              </GhostBtn>
+              <PrimaryBtn onClick={() => void capturePhoto()}>
+                Capture
+              </PrimaryBtn>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <PrimaryBtn onClick={() => void startCamera()}>
+              <Camera className="h-4 w-4" />
+              Camera
+            </PrimaryBtn>
+            <GhostBtn onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-3.5 w-3.5" />
+              Upload
+            </GhostBtn>
+          </div>
+        )}
+
+        {cameraError && !locked && (
+          <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{cameraError}</p>
+        )}
+
+        {statusNote && (
+          <p className="text-xs" style={{ color: locked ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
+            {statusNote}
+          </p>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => void handleFileSelect(e.target.files?.[0] ?? null)}
+        />
+
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
-  const { profile, signOut, isSigningOut } = useAuth();
+  const { profile, signOut, isSigningOut, refreshProfile } = useAuth();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -140,6 +453,8 @@ export default function ProfilePage() {
           {isSigningOut ? 'Signing Out...' : 'Sign Out'}
         </button>
       </div>
+
+      <AvatarSection profile={profile} refreshProfile={refreshProfile} />
 
       <div
         className="rounded-xl p-6 border text-center"

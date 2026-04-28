@@ -1,8 +1,9 @@
 "use client"
 
-import React, { useState, useMemo, useEffect, useCallback } from "react"
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/lib/auth-context"
+import { OnboardMemberModal } from "@/components/admin/OnboardMemberModal"
 import {
   A,
   ACard,
@@ -19,7 +20,7 @@ import {
   SummaryBox,
 } from "@/lib/admin-ui"
 import { toast } from "sonner"
-import { Search, Snowflake, Play, AlertTriangle, Users } from "lucide-react"
+import { Snowflake, Play, AlertTriangle, Users, UserPlus } from "lucide-react"
 
 interface MemberRow {
   profile_id: string
@@ -50,6 +51,68 @@ interface PlanOption {
   duration_days: number
 }
 
+interface OnboardResponse {
+  memberId: string
+  membershipId: string
+  qrCode: string
+  magicLink: string | null
+  redirectTo?: string
+  emailSent?: boolean
+  emailError?: string
+}
+
+const MEMBERS_CACHE_TTL_MS = 30_000
+const PLANS_CACHE_TTL_MS = 5 * 60_000
+const MEMBERS_CACHE_PREFIX = "admin-members-cache:"
+
+type MembersCachePayload = {
+  gymId: string
+  cachedAt: number
+  members: MemberRow[]
+}
+
+function readMembersCache(gymId: string): MembersCachePayload | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.sessionStorage.getItem(`${MEMBERS_CACHE_PREFIX}${gymId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as MembersCachePayload
+    if (!parsed || parsed.gymId !== gymId || !Array.isArray(parsed.members)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeMembersCache(gymId: string, members: MemberRow[]) {
+  if (typeof window === "undefined") return
+  const payload: MembersCachePayload = {
+    gymId,
+    cachedAt: Date.now(),
+    members,
+  }
+  try {
+    window.sessionStorage.setItem(`${MEMBERS_CACHE_PREFIX}${gymId}`, JSON.stringify(payload))
+  } catch {
+    // Ignore storage failures in restricted/private environments.
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+  })
+}
+
 export default function MembersPage() {
   const supabase = useMemo(() => createClient(), [])
   const { profile } = useAuth()
@@ -65,57 +128,123 @@ export default function MembersPage() {
   const [renewPlanId, setRenewPlanId] = useState("")
   const [renewPaymentMethod, setRenewPaymentMethod] = useState<"cash" | "gcash">("cash")
   const [renewLoading, setRenewLoading] = useState(false)
+  const [onboardOpen, setOnboardOpen] = useState(false)
+  const plansCacheRef = useRef<{ gymId: string; cachedAt: number; plans: PlanOption[] } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const fetchMembers = useCallback(async () => {
+  const getActivePlans = useCallback(async (forceRefresh = false): Promise<PlanOption[]> => {
+    if (!profile?.gymId) return []
+
+    const cached = plansCacheRef.current
+    const isCachedValid =
+      cached &&
+      cached.gymId === profile.gymId &&
+      Date.now() - cached.cachedAt < PLANS_CACHE_TTL_MS
+
+    if (!forceRefresh && isCachedValid) {
+      return cached.plans
+    }
+
+    const query = supabase
+      .from("membership_plans")
+      .select("id, name, price, duration_days")
+      .eq("gym_id", profile.gymId)
+      .eq("is_active", true)
+      .order("price")
+
+    const { data, error } = await query
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const plans = (data ?? []) as PlanOption[]
+    plansCacheRef.current = {
+      gymId: profile.gymId,
+      cachedAt: Date.now(),
+      plans,
+    }
+    return plans
+  }, [profile?.gymId, supabase])
+
+  const fetchMembers = useCallback(async (forceRefresh = false) => {
     if (!profile?.gymId) {
       setMembers([])
       setIsLoading(false)
       return
     }
 
-    const [{ data: profilesData }, { data: membershipsData }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, name, email, contact_number, created_at, status")
-        .eq("role", "member")
-        .eq("gym_id", profile.gymId)
-        .order("name"),
-      supabase
-        .from("memberships")
-        .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
-        .eq("gym_id", profile.gymId)
-        .order("created_at", { ascending: false }),
-    ])
-
-    const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
-    for (const m of membershipsData ?? []) {
-      if (!m.member_id) continue
-      if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
+    let usedCachedSnapshot = false
+    if (!forceRefresh) {
+      const cached = readMembersCache(profile.gymId)
+      if (cached) {
+        setMembers(cached.members)
+        setIsLoading(false)
+        usedCachedSnapshot = true
+        if (Date.now() - cached.cachedAt < MEMBERS_CACHE_TTL_MS) {
+          return
+        }
+      }
     }
 
-    setMembers(
-      (profilesData ?? []).map((p) => {
-        const m = membershipMap.get(p.id)
-        return {
-          profile_id: p.id,
-          name: p.name,
-          email: p.email,
-          contact_number: p.contact_number,
-          profile_status: p.status === "rejected" ? "rejected" : "active",
-          membership_id: m?.id ?? null,
-          plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
-          start_date: m?.start_date ?? null,
-          end_date: m?.end_date ?? null,
-          membership_status: m?.status ?? null,
-          created_at: p.created_at,
-        }
-      })
-    )
-    setIsLoading(false)
+    try {
+      const memberQueries = Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, name, email, contact_number, created_at, status")
+          .eq("role", "member")
+          .eq("gym_id", profile.gymId)
+          .order("name"),
+        supabase
+          .from("memberships")
+          .select("id, member_id, start_date, end_date, status, amount_paid, payment_method, created_at, membership_plans!memberships_plan_id_fkey(name)")
+          .eq("gym_id", profile.gymId)
+          .order("created_at", { ascending: false }),
+      ])
+
+      const [{ data: profilesData }, { data: membershipsData }] = await withTimeout(
+        memberQueries,
+        15000,
+        "Loading members timed out",
+      )
+
+      const membershipMap = new Map<string, (typeof membershipsData extends (infer T)[] | null ? T : never)>()
+      for (const m of membershipsData ?? []) {
+        if (!m.member_id) continue
+        if (!membershipMap.has(m.member_id)) membershipMap.set(m.member_id, m)
+      }
+
+      const nextMembers: MemberRow[] = (profilesData ?? []).map((p) => {
+          const m = membershipMap.get(p.id)
+          return {
+            profile_id: p.id,
+            name: p.name,
+            email: p.email,
+            contact_number: p.contact_number,
+        profile_status: p.status === "rejected" ? "rejected" : "active",
+            membership_id: m?.id ?? null,
+            plan_name: m ? ((m.membership_plans as unknown as { name: string })?.name ?? "Unknown") : null,
+            start_date: m?.start_date ?? null,
+            end_date: m?.end_date ?? null,
+            membership_status: m?.status ?? null,
+            created_at: p.created_at,
+          }
+        })
+
+      setMembers(nextMembers)
+      writeMembersCache(profile.gymId, nextMembers)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown members load error"
+      if (!usedCachedSnapshot) {
+        toast.error(`Failed to load members: ${message}`)
+        setMembers([])
+      }
+    } finally {
+      setIsLoading(false)
+    }
   }, [profile?.gymId, supabase])
 
-  useEffect(() => { fetchMembers() }, [fetchMembers])
+  useEffect(() => { void fetchMembers(false) }, [fetchMembers])
 
   async function fetchPayments(memberId: string) {
     const { data } = await supabase
@@ -157,7 +286,7 @@ export default function MembersPage() {
     const { error } = await supabase.from("memberships").update({ status }).eq("id", membershipId)
     if (error) { toast.error("Failed to update status"); return }
     toast.success(status === "frozen" ? "Membership frozen." : "Membership activated.")
-    fetchMembers()
+    void fetchMembers(true)
   }
 
   async function handleProfileStatusChange(memberId: string, status: "active" | "rejected") {
@@ -167,7 +296,7 @@ export default function MembersPage() {
       return
     }
     toast.success(status === "rejected" ? "Member has been banned." : "Member has been unbanned.")
-    fetchMembers()
+    void fetchMembers(true)
   }
 
   async function openRenewDialog(member: MemberRow) {
@@ -176,9 +305,14 @@ export default function MembersPage() {
     setRenewPlans([])
     setRenewPlanId("")
     setRenewOpen(true)
-    const { data } = await supabase.from("membership_plans").select("id, name, price, duration_days").eq("is_active", true).order("price")
-    setRenewPlans(data ?? [])
-    setRenewPlanId(data?.[0]?.id ?? "")
+    try {
+      const plans = await getActivePlans(false)
+      setRenewPlans(plans)
+      setRenewPlanId(plans[0]?.id ?? "")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load plans"
+      toast.error(message)
+    }
   }
 
   async function handleRenewMembership() {
@@ -219,7 +353,7 @@ export default function MembersPage() {
     setRenewPlans([])
     setRenewPlanId("")
     setRenewPaymentMethod("cash")
-    fetchMembers()
+    void fetchMembers(true)
   }
 
   const expiredMembers = members.filter((m) => m.profile_status !== "rejected" && m.membership_status === "expired")
@@ -233,6 +367,12 @@ export default function MembersPage() {
       <PageHeader
         title="Members"
         subtitle={`${members.length} member account${members.length !== 1 ? "s" : ""}`}
+        action={
+          <PrimaryBtn onClick={() => setOnboardOpen(true)}>
+            <UserPlus className="h-4 w-4" />
+            Add member
+          </PrimaryBtn>
+        }
       />
 
       {expiredMembers.length > 0 && (
@@ -442,7 +582,7 @@ export default function MembersPage() {
             <ChoicePicker
               label="Payment Method"
               value={renewPaymentMethod}
-              onChange={(v) => setRenewPaymentMethod(v as "cash" | "gcash")}
+              onChange={(v: "cash" | "gcash") => setRenewPaymentMethod(v)}
               options={[
                 { value: "cash", label: "Cash" },
                 { value: "gcash", label: "GCash" },
@@ -468,6 +608,12 @@ export default function MembersPage() {
           </div>
         )}
       </Modal>
+
+      <OnboardMemberModal
+        open={onboardOpen}
+        onClose={() => setOnboardOpen(false)}
+        onSuccess={() => void fetchMembers(true)}
+      />
     </div>
   )
 }

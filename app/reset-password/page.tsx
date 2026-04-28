@@ -1,0 +1,134 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
+
+export default function ResetPasswordPage() {
+  const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
+  const { completePasswordSetup, signIn } = useAuth();
+
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { data: currentUserData } = await supabase.auth.getUser();
+    const { data, error: updateError } = await supabase.auth.updateUser({ password });
+
+    const isTransientPasswordRotationError = Boolean(updateError && 'status' in updateError && (updateError as { status?: number }).status === 406)
+    if (updateError && !isTransientPasswordRotationError) {
+      setError(updateError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    const signInEmail = currentUserData.user?.email ?? data.user?.email ?? '';
+    const signInResult = signInEmail ? await signIn(signInEmail, password) : { error: 'Missing user email.', user: null, profile: null }
+
+    if (signInResult.error) {
+      setError(signInResult.error);
+      setIsSubmitting(false);
+      return;
+    }
+
+    completePasswordSetup(signInResult.user?.id ?? data.user?.id ?? null);
+
+    setSuccess(true);
+    setIsSubmitting(false);
+    setTimeout(() => {
+      router.replace('/member/settings');
+    }, 1200);
+  }
+
+  return (
+    <div className="min-h-dvh flex items-center justify-center px-6" style={{ backgroundColor: 'var(--color-background)' }}>
+      <div className="w-full max-w-md rounded-2xl border p-6" style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}>
+        <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          Set Your Password
+        </h1>
+        <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          Create a password so you can sign in with email + password next time.
+        </p>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+              New Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 6 characters"
+              disabled={isSubmitting || success}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Repeat password"
+              disabled={isSubmitting || success}
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+              style={{ borderColor: 'var(--color-surface)', color: 'var(--color-text-primary)' }}
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm" style={{ color: 'var(--color-danger)' }}>
+              {error}
+            </p>
+          )}
+
+          {success && (
+            <p className="text-sm" style={{ color: '#16A34A' }}>
+              Password updated. Redirecting to login...
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSubmitting || success}
+            className="w-full rounded-lg py-2.5 text-sm font-semibold"
+            style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+          >
+            {isSubmitting ? 'Saving...' : 'Save Password'}
+          </button>
+        </form>
+
+        <div className="mt-4 text-center">
+          <Link href="/gym-select" className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Back to login
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

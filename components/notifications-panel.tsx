@@ -59,18 +59,28 @@ export function NotificationsPanel() {
   // Realtime — new notifications appear instantly
   useEffect(() => {
     if (!profile?.gymId) return;
-    const channel = supabase
-      .channel('notifications-' + profile.gymId)
-      .on('postgres_changes', {
+    const channelName = `notifications-${profile.gymId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase.channel(channelName);
+      channel.on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'notifications',
         filter: `gym_id=eq.${profile.gymId}`,
       }, (payload) => {
         setNotifications((prev) => [payload.new as Notification, ...prev.slice(0, 29)]);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      });
+      channel.subscribe();
+    } catch (error) {
+      console.error('Failed to initialize notifications realtime channel', error);
+    }
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [profile?.gymId, supabase]);
 
   // Close on outside click
