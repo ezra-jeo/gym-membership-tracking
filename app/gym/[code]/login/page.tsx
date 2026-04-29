@@ -19,7 +19,7 @@ export default async function GymLoginPage({ params, searchParams }: PageProps) 
   const backHref = source === 'select' ? '/gym-select' : `/gym/${encodeURIComponent(code)}`;
   const backLabel = source === 'select' ? 'Back to gym select' : 'Back to gym page';
 
-  if (!gym || !gym.is_published) {
+  if (!gym) {
     notFound();
   }
 
