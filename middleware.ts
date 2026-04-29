@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { isValidLoginOrigin } from '@/lib/login-origin'
 
 const LOGIN_ORIGIN_COOKIE_KEY = "stren.auth.loginOriginPath"
 const GYM_LOGIN_PATH_REGEX = /^\/gym\/[^/]+\/login$/
@@ -58,10 +59,7 @@ function getStoredLoginOriginPath(request: NextRequest): string | null {
   const candidate = request.cookies.get(LOGIN_ORIGIN_COOKIE_KEY)?.value
   if (!candidate) return null
 
-  if (candidate === "/login") return candidate
-  if (GYM_LOGIN_PATH_REGEX.test(candidate)) return candidate
-
-  return null
+  return isValidLoginOrigin(candidate) ? candidate : null
 }
 
 function resolveLoginPath(request: NextRequest, pathname: string): string {
@@ -73,8 +71,18 @@ function resolveLoginPath(request: NextRequest, pathname: string): string {
   return "/login"
 }
 
-function withLoginOriginCookie(response: NextResponse, pathname: string): NextResponse {
-  if (pathname === "/login") {
+function withLoginOriginCookie(response: NextResponse, pathWithSearch: string): NextResponse {
+  // Normalize/decode any encoded input before storing so cookies never contain
+  // percent-encoded query separators (e.g. "%3F"). This avoids mismatch between
+  // stored origin and runtime routing behavior.
+  let candidate = pathWithSearch
+  try {
+    candidate = decodeURIComponent(pathWithSearch)
+  } catch {
+    candidate = pathWithSearch
+  }
+
+  if (candidate === "/login") {
     response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, "/login", {
       path: "/",
       sameSite: "lax",
@@ -83,8 +91,8 @@ function withLoginOriginCookie(response: NextResponse, pathname: string): NextRe
     return response
   }
 
-  if (GYM_LOGIN_PATH_REGEX.test(pathname)) {
-    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, pathname, {
+  if (isValidLoginOrigin(candidate)) {
+    response.cookies.set(LOGIN_ORIGIN_COOKIE_KEY, candidate, {
       path: "/",
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 30,
@@ -117,6 +125,7 @@ export async function middleware(request: NextRequest) {
   )
 
   const pathname = request.nextUrl.pathname
+  const pathWithSearch = request.nextUrl.pathname + request.nextUrl.search
 
   const isApiRoute = pathname.startsWith("/api")
   const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
@@ -129,7 +138,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/signup" ||
     pathname.startsWith("/signup/")
 
-  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathname), pathname)
+  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathWithSearch), pathname)
 
   // API routes should return API status codes (401/403/etc.), not login redirects.
   if (isApiRoute) {

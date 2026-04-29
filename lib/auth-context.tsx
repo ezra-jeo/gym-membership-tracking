@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
 import { createClient } from "@/lib/supabase"
 import { withTimeout } from "@/lib/async-guard"
+import { isValidLoginOrigin, normalizeLoginOrigin } from '@/lib/login-origin'
+import { resolveSignOutTargetPath } from '@/lib/sign-out-routing'
 import type { User } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/types"
 
@@ -119,11 +121,7 @@ function getStoredLoginOriginPath(): string | null {
   }
 
   if (!candidate) return null
-
-  if (candidate === "/login") return candidate
-  if (/^\/gym\/[^/]+\/login$/.test(candidate)) return candidate
-
-  return null
+  return isValidLoginOrigin(candidate) ? candidate : null
 }
 
 function resolveLoginOriginPath(pathname?: string | null): string {
@@ -556,10 +554,15 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
     setIsSigningOut(true)
     const client = getClient()
     const storedLoginOriginPath = getStoredLoginOriginPath()
-    const targetLoginPath = storedLoginOriginPath
-      ?? (profile?.role === "member"
-        ? await getMemberSignOutRedirectPath(client, profile?.gymId)
-        : "/login")
+    const normalizedStored = normalizeLoginOrigin(storedLoginOriginPath)
+
+    const gymLoginPath = profile?.gymId
+      ? await getMemberSignOutRedirectPath(client, profile?.gymId)
+      : null
+    const targetLoginPath = resolveSignOutTargetPath({
+      storedLoginOriginPath: normalizedStored,
+      gymLoginPath,
+    })
     try {
       const { error } = await withTimeout(
         client.auth.signOut(),
@@ -586,9 +589,9 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
         // Storage can be unavailable in private/locked-down browser contexts.
       }
       router.replace(targetLoginPath)
-      router.refresh()
       window.setTimeout(() => {
-        if (window.location.pathname !== targetLoginPath) {
+        const currentPath = `${window.location.pathname}${window.location.search}`
+        if (currentPath !== targetLoginPath) {
           window.location.assign(targetLoginPath)
         }
       }, NAVIGATION_FAILSAFE_MS)

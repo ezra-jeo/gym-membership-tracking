@@ -9,6 +9,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@/lib/validations';
 import type { z } from 'zod';
+import { isValidLoginOrigin } from '@/lib/login-origin'
 
 function getRoleHome(role: string): string {
   switch (role) {
@@ -24,13 +25,14 @@ function getRoleHome(role: string): string {
 
 interface LoginFormProps {
   gymCode?: string;
+  initialOriginPath?: string;
 }
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
 const LOGIN_ORIGIN_STORAGE_KEY = 'stren.auth.loginOriginPath';
 
-export function LoginForm({ gymCode }: LoginFormProps) {
+export function LoginForm({ gymCode, initialOriginPath }: LoginFormProps) {
   const router = useRouter();
   const { signIn, signOut } = useAuth();
   const supabase = useMemo(() => createClient(), []);
@@ -44,6 +46,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
     register,
     handleSubmit,
     getValues,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -74,6 +77,7 @@ export function LoginForm({ gymCode }: LoginFormProps) {
       const { error: authError, user, profile } = await signIn(email, password);
 
       if (authError) {
+        setValue('password', '', { shouldDirty: false, shouldTouch: false, shouldValidate: false });
         setError(authError);
         return;
       }
@@ -105,9 +109,22 @@ export function LoginForm({ gymCode }: LoginFormProps) {
       }
 
       if (typeof window !== 'undefined') {
-        const originPath = gymCode
-          ? `/gym/${encodeURIComponent(gymCode)}/login`
-          : '/login';
+        const computed = initialOriginPath
+          ? initialOriginPath
+          : gymCode
+            ? `/gym/${encodeURIComponent(gymCode)}/login`
+            : '/login'
+
+        // Always persist a normalized (decoded) origin to avoid encoded '?' markers.
+        let originPath = computed
+        try {
+          const decoded = decodeURIComponent(computed)
+          originPath = decoded
+        } catch {
+          originPath = computed
+        }
+
+        originPath = isValidLoginOrigin(originPath) ? originPath : (gymCode ? `/gym/${encodeURIComponent(gymCode)}/login` : '/login')
 
         try {
           window.localStorage.removeItem(LOGIN_ORIGIN_STORAGE_KEY);

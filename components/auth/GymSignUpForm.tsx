@@ -81,6 +81,7 @@ export function GymSignUpForm({ gymCode, gymId }: GymSignUpFormProps) {
     }
 
     router.replace('/member');
+    router.refresh();
   };
 
   return (

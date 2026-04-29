@@ -85,6 +85,14 @@ function ComingSoonPage({ gym }: { gym: GymData }) {
       style={{ background: 'linear-gradient(135deg, var(--color-secondary), var(--color-primary-dark), var(--color-primary))' }}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_40%),radial-gradient(circle_at_bottom,rgba(255,255,255,0.08),transparent_35%)]" />
+      <div className="relative z-10 flex justify-start px-6 pt-6 sm:px-8">
+        <Link
+          href="/landing"
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/15"
+        >
+          &larr; Back to Stren
+        </Link>
+      </div>
       <div className="flex min-h-screen items-center justify-center px-5 sm:px-6">
         <div className="relative z-10 max-w-3xl text-center">
           <div className="mb-6 inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-white/85">
