@@ -57,7 +57,7 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   )
 }
 
-export function ACard({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+export function ACard({ children, className = "", style }: { children?: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
     <div className={`rounded-xl ${className}`} style={{ backgroundColor: "hsl(var(--admin-surface))", border: "1px solid hsl(var(--admin-border))", ...style }}>
       {children}

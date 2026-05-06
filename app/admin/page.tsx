@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useMemo } from "react"
+import dynamic from "next/dynamic"
 import { createClient } from "@/lib/supabase"
 import { A, ACard, Avatar, EmptyState, LoadingSkeleton, PageHeader } from "@/lib/admin-ui"
 import {
@@ -12,16 +13,20 @@ import {
   LogOut,
   TrendingUp,
 } from "lucide-react"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts"
 import { toast } from "sonner"
+
+const AdminDashboardCharts = dynamic(
+  () => import("@/components/admin/AdminDashboardCharts").then((mod) => mod.AdminDashboardCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ACard className="p-4 h-60" />
+        <ACard className="p-4 h-60" />
+      </div>
+    ),
+  }
+)
 
 export default function AdminDashboard() {
   const supabase = useMemo(() => createClient(), [])
@@ -30,6 +35,7 @@ export default function AdminDashboard() {
   const [checkedIn, setCheckedIn] = useState<
     { id: string; member_id: string; check_in: string; name: string }[]
   >([])
+  const [checkedInCount, setCheckedInCount] = useState(0)
   const [todayVisits, setTodayVisits]     = useState(0)
   const [totalMembers, setTotalMembers]   = useState(0)  // from profiles
   const [activeCount, setActiveCount]     = useState(0)  // active memberships
@@ -46,7 +52,8 @@ export default function AdminDashboard() {
       const { data, error } = await supabase.rpc('admin_dashboard_stats')
       if (error || !data) return
 
-      setCheckedIn(data.currently_in)
+      setCheckedInCount(Array.isArray(data.currently_in) ? data.currently_in.length : 0)
+      setCheckedIn(Array.isArray(data.currently_in) ? data.currently_in.slice(0, 50) : [])
       setTodayVisits(data.today_visits)
       setTotalMembers(data.total_members)
       setActiveCount(data.active_plans)
@@ -81,7 +88,7 @@ export default function AdminDashboard() {
   const stats = [
     {
       label: "Currently In Gym",
-      value: checkedIn.length,
+      value: checkedInCount,
       icon: Activity,
       iconColor: "#16A34A",
       bg: "#ECFDF3",
@@ -163,11 +170,11 @@ export default function AdminDashboard() {
               className="rounded-full px-2 py-0.5 text-xs font-medium"
               style={{ backgroundColor: "#ECFDF3", color: "#16A34A", border: "1px solid #BBF7D0" }}
             >
-              {checkedIn.length} checked in
+              {checkedInCount} checked in
             </span>
           </div>
           <div className="pt-3">
-            {checkedIn.length === 0 ? (
+            {checkedInCount === 0 ? (
               <EmptyState
                 icon={<Clock size={28} />}
                 title="No one currently checked in"
@@ -175,6 +182,11 @@ export default function AdminDashboard() {
               />
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
+                {checkedInCount > checkedIn.length && (
+                  <p className="text-xs" style={{ color: A.muted }}>
+                    Showing first {checkedIn.length} of {checkedInCount}
+                  </p>
+                )}
                 {checkedIn.map((c) => (
                   <div
                     key={c.id}
@@ -244,60 +256,7 @@ export default function AdminDashboard() {
         </ACard>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ACard className="p-4">
-          <div className="pb-3" style={{ borderBottom: `1px solid ${A.border}` }}>
-            <p className="text-base font-semibold" style={{ color: A.text }}>
-              Daily Attendance (Last 7 Days)
-            </p>
-          </div>
-          <div className="h-48 pt-3">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={attendanceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" />
-                  <XAxis dataKey="day" tick={{ fill: "var(--admin-text-muted)", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "var(--admin-text-muted)", fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#ffffff",
-                      border: "1px solid var(--admin-border)",
-                      borderRadius: "8px",
-                      color: "var(--admin-text)",
-                    }}
-                  />
-                  <Bar dataKey="visits" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-          </div>
-        </ACard>
-
-        <ACard className="p-4">
-          <div className="pb-3" style={{ borderBottom: `1px solid ${A.border}` }}>
-            <p className="text-base font-semibold" style={{ color: A.text }}>
-              Daily Revenue (Last 7 Days)
-            </p>
-          </div>
-          <div className="h-48 pt-3">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" />
-                  <XAxis dataKey="day" tick={{ fill: "var(--admin-text-muted)", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "var(--admin-text-muted)", fontSize: 12 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#ffffff",
-                      border: "1px solid var(--admin-border)",
-                      borderRadius: "8px",
-                      color: "var(--admin-text)",
-                    }}
-                    formatter={(value: number) => ["₱" + value.toLocaleString(), "Revenue"]}
-                  />
-                  <Bar dataKey="revenue" fill="#16A34A" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-          </div>
-        </ACard>
-      </div>
+      <AdminDashboardCharts attendanceData={attendanceData} revenueData={revenueData} />
     </div>
   )
 }

@@ -43,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const AUTH_LOADING_TIMEOUT_MS = 12000;
+const PROFILE_GRACE_MS = 2500;
 
 export default function AdminLayout({
   children,
@@ -55,15 +56,13 @@ export default function AdminLayout({
   const supabase = useMemo(() => createClient(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [gymName, setGymName] = useState<string | null>(null);
-  const [attemptedProfileRecovery, setAttemptedProfileRecovery] = useState(false);
-  const [isRecoveringProfile, setIsRecoveringProfile] = useState(false);
   const [authTimeoutExceeded, setAuthTimeoutExceeded] = useState(false);
-  const [profileRecoveryAttempts, setProfileRecoveryAttempts] = useState(0);
+  const [profileGraceExceeded, setProfileGraceExceeded] = useState(false);
 
   useEffect(() => {
     if (isSigningOut) return;
 
-    if (isLoading || isRecoveringProfile) return;
+    if (isLoading) return;
     if (!user) {
       router.replace('/login');
       return;
@@ -76,28 +75,10 @@ export default function AdminLayout({
     if (!['owner', 'admin', 'staff'].includes(profile.role)) {
       router.replace('/member');
     }
-  }, [attemptedProfileRecovery, isLoading, isRecoveringProfile, isSigningOut, profile, router, user]);
+  }, [isLoading, isSigningOut, profile, router, user]);
 
   useEffect(() => {
-    if (isLoading || !user || profile || attemptedProfileRecovery || profileRecoveryAttempts >= 3) return;
-
-    let active = true;
-    setAttemptedProfileRecovery(true);
-    setProfileRecoveryAttempts((prev) => prev + 1);
-    setIsRecoveringProfile(true);
-
-    void refreshProfile().finally(() => {
-      if (!active) return;
-      setIsRecoveringProfile(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [isLoading, profile, profileRecoveryAttempts, refreshProfile, user]);
-
-  useEffect(() => {
-    if (!isLoading && !isRecoveringProfile) {
+    if (!isLoading || user) {
       setAuthTimeoutExceeded(false);
       return;
     }
@@ -109,13 +90,28 @@ export default function AdminLayout({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [isLoading, isRecoveringProfile]);
+  }, [isLoading, user]);
+
+  useEffect(() => {
+    if (!user || isLoading || profile) {
+      setProfileGraceExceeded(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setProfileGraceExceeded(true);
+    }, PROFILE_GRACE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isLoading, profile, user]);
 
   useEffect(() => {
     if (isSigningOut) return;
 
-    if (!authTimeoutExceeded) return;
-    if (!user) router.replace('/login');
+    if (!authTimeoutExceeded || user) return;
+    router.replace('/login');
   }, [authTimeoutExceeded, isSigningOut, router, user]);
 
   // Fetch gym name once profile (and gymId) is available
@@ -150,11 +146,12 @@ export default function AdminLayout({
     await signOut();
   };
 
-  if (isLoading || isRecoveringProfile || authTimeoutExceeded) return <LoadingScreen />;
+  if (isLoading) return <LoadingScreen />;
+  if (authTimeoutExceeded && !user) return <LoadingScreen />;
 
   if (!user) return <LoadingScreen />;
 
-  if (!profile) {
+  if (!profile && profileGraceExceeded) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: 'var(--color-background)' }}>
         <div className="max-w-md w-full rounded-xl border p-5 space-y-3" style={{ backgroundColor: 'var(--color-white)', borderColor: 'var(--color-surface)' }}>
@@ -165,10 +162,7 @@ export default function AdminLayout({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
-              onClick={() => {
-                setProfileRecoveryAttempts(0);
-                setAttemptedProfileRecovery(false);
-              }}
+              onClick={() => void refreshProfile()}
               className="rounded-md px-3 py-2 text-sm font-medium"
               style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
             >
@@ -187,6 +181,8 @@ export default function AdminLayout({
       </div>
     );
   }
+
+  if (!profile) return <LoadingScreen />;
 
   const displayName = gymName ?? 'Stren';
   const displayInitial = displayName.charAt(0).toUpperCase();

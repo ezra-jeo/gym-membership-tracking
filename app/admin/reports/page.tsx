@@ -1,20 +1,23 @@
 "use client"
 
 import React, { useMemo, useState, useEffect, useCallback } from "react"
+import dynamic from "next/dynamic"
 import { createClient } from "@/lib/supabase"
 import { A, ACard, PageHeader } from "@/lib/admin-ui"
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-  LineChart,
-  Line,
-} from "recharts"
 import { CalendarDays, Users, DollarSign, ArrowUp } from "lucide-react"
+
+const AdminReportsCharts = dynamic(
+  () => import("@/components/admin/AdminReportsCharts").then((mod) => mod.AdminReportsCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ACard className="p-4 h-72" />
+        <ACard className="p-4 h-72" />
+      </div>
+    ),
+  }
+)
 
 function StatCard({
   icon,
@@ -46,6 +49,9 @@ function StatCard({
 
 export default function ReportsPage() {
   const supabase = useMemo(() => createClient(), [])
+  const MAX_DAYS = 14
+  const MAX_PEAK_HOURS = 8
+  const MAX_REVENUE_DAYS = 31
 
   const [activeCount, setActiveCount] = useState(0)
   const [expiredCount, setExpiredCount] = useState(0)
@@ -64,10 +70,10 @@ export default function ReportsPage() {
     setActiveCount(data.active_count)
     setExpiredCount(data.expired_count)
     setMonthRevenue(data.month_revenue)
-    setAttendanceData(data.attendance_by_day)
-    setRevenueData(data.revenue_by_day)
-    setPeakHours(data.peak_hours)
-    setRevenueByDayOfMonth(data.revenue_by_dom)
+    setAttendanceData((data.attendance_by_day || []).slice(0, MAX_DAYS))
+    setRevenueData((data.revenue_by_day || []).slice(0, MAX_DAYS))
+    setPeakHours((data.peak_hours || []).slice(0, MAX_PEAK_HOURS))
+    setRevenueByDayOfMonth((data.revenue_by_dom || []).slice(0, MAX_REVENUE_DAYS))
     setMethodBreakdown({
       cashTotal: data.method_breakdown.cash_total,
       cashCount: data.method_breakdown.cash_count,
@@ -75,8 +81,9 @@ export default function ReportsPage() {
       gcashCount: data.method_breakdown.gcash_count,
     })
 
-    const totalVisits = data.attendance_by_day.reduce((s: number, d: { visits: number }) => s + d.visits, 0)
-    setAvgDailyVisits((totalVisits / Math.max(1, data.attendance_by_day.length)).toFixed(1))
+    const attendanceRows = (data.attendance_by_day || []).slice(0, MAX_DAYS)
+    const totalVisits = attendanceRows.reduce((s: number, d: { visits: number }) => s + d.visits, 0)
+    setAvgDailyVisits((totalVisits / Math.max(1, attendanceRows.length)).toFixed(1))
   }, [supabase])
 
   useEffect(() => {
@@ -118,58 +125,7 @@ export default function ReportsPage() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ACard className="p-4">
-          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Attendance (Last 14 Days)</p>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={attendanceData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={A.border} />
-                <XAxis dataKey="date" tick={{ fill: A.muted, fontSize: 11 }} interval="preserveStartEnd" axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
-                <YAxis tick={{ fill: A.muted, fontSize: 11 }} allowDecimals={false} axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#fff",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
-                    color: "#111827",
-                  }}
-                  labelStyle={{ color: "#111827" }}
-                  itemStyle={{ color: "#111827" }}
-                  cursor={{ fill: "#f3f4f6" }}
-                />
-                <Line type="monotone" dataKey="visits" stroke="#D4956A" strokeWidth={2.5} dot={{ fill: "#D4956A", r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </ACard>
-
-        <ACard className="p-4">
-          <p className="text-base font-semibold mb-3" style={{ color: A.text }}>Revenue (Last 14 Days)</p>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={A.border} />
-                <XAxis dataKey="date" tick={{ fill: A.muted, fontSize: 11 }} interval="preserveStartEnd" axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
-                <YAxis tick={{ fill: A.muted, fontSize: 11 }} axisLine={{ stroke: A.border }} tickLine={{ stroke: A.border }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#fff",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
-                    color: "#111827",
-                  }}
-                  labelStyle={{ color: "#111827" }}
-                  itemStyle={{ color: "#111827" }}
-                  cursor={{ fill: "#f3f4f6" }}
-                  formatter={(value: number) => [`₱${value.toLocaleString()}`, "Revenue"]}
-                />
-                <Bar dataKey="revenue" fill="#2A9D8F" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ACard>
-      </div>
+      <AdminReportsCharts attendanceData={attendanceData} revenueData={revenueData} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <ACard className="p-4">

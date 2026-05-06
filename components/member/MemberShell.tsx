@@ -41,7 +41,7 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
   }, [user, isLoading, hasServerUser, router, gymLoginHref]);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading || hasServerUser) {
       setAuthTimeoutExceeded(false);
       return;
     }
@@ -56,11 +56,11 @@ export function MemberShell({ children, gymBranding, hasServerUser }: MemberShel
   }, [isLoading]);
 
   useEffect(() => {
-    if (!authTimeoutExceeded) return;
+    if (!authTimeoutExceeded || hasServerUser) return;
     router.replace(gymLoginHref);
-  }, [authTimeoutExceeded, gymLoginHref, router]);
+  }, [authTimeoutExceeded, gymLoginHref, hasServerUser, router]);
 
-  if (isLoading || authTimeoutExceeded) return <LoadingScreen />;
+  if ((isLoading && !hasServerUser) || (authTimeoutExceeded && !hasServerUser)) return <LoadingScreen />;
 
   const gymName = gymBranding?.name ?? 'Stren';
   const gymLogoUrl = gymBranding?.logo_url ?? null;
