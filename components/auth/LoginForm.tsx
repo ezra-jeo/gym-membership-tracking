@@ -10,6 +10,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema } from '@/lib/validations';
 import type { z } from 'zod';
 import { isValidLoginOrigin } from '@/lib/login-origin'
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
 function getRoleHome(role: string): string {
   switch (role) {
@@ -42,19 +45,20 @@ export function LoginForm({ gymCode, initialOriginPath }: LoginFormProps) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const {
-    register,
-    handleSubmit,
-    getValues,
-    setValue,
-    formState: { errors },
-  } = useForm<LoginFormData>({
+  const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: '',
       password: '',
     },
   });
+
+  const {
+    handleSubmit,
+    getValues,
+    setValue,
+    control,
+  } = form;
 
   const resolveGymIdByCode = async (code: string): Promise<string | null> => {
     const { data, error: gymError } = await supabase
@@ -168,132 +172,110 @@ export function LoginForm({ gymCode, initialOriginPath }: LoginFormProps) {
 
   return (
     <>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="space-y-3">
-          <label
-            htmlFor="email"
-            className="text-xs font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-text-secondary)' }}
-          >
-            Email
-          </label>
-          <input
-            {...register('email')}
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            disabled={isLoading}
-            className="w-full px-4 py-3 rounded-2xl border transition-all outline-none"
-            style={{
-              backgroundColor: 'var(--color-white)',
-              borderColor: 'var(--color-surface)',
-              borderWidth: '1.5px',
-              color: 'var(--color-text-primary)',
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-primary)';
-              e.currentTarget.style.boxShadow = '0 0 0 4px var(--color-primary-glow)';
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-surface)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
+      <Form {...form}>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <FormField
+            control={control}
+            name="email"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'hsl(var(--text-secondary))' }}>
+                  Email
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    id="email"
+                    type="email"
+                    placeholder="you@example.com"
+                    disabled={isLoading}
+                    className="h-12 rounded-2xl border-[1.5px] bg-white"
+                    style={{
+                      backgroundColor: 'hsl(var(--white))',
+                      borderColor: 'hsl(var(--surface))',
+                      color: 'hsl(var(--text-primary))',
+                    }}
+                  />
+                </FormControl>
+                <FormMessage className="text-xs mt-1" />
+              </FormItem>
+            )}
           />
-          {errors.email && (
-            <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>
-              {errors.email.message}
+
+          <FormField
+            control={control}
+            name="password"
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'hsl(var(--text-secondary))' }}>
+                  Password
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    disabled={isLoading}
+                    className="h-12 rounded-2xl border-[1.5px] bg-white"
+                    style={{
+                      backgroundColor: 'hsl(var(--white))',
+                      borderColor: 'hsl(var(--surface))',
+                      color: 'hsl(var(--text-primary))',
+                    }}
+                  />
+                </FormControl>
+                <FormMessage className="text-xs mt-1" />
+              </FormItem>
+            )}
+          />
+
+          {error && (
+            <p className="text-sm font-medium" style={{ color: 'hsl(var(--danger))' }}>
+              {error}
             </p>
           )}
-        </div>
 
-        <div className="space-y-3">
-          <label
-            htmlFor="password"
-            className="text-xs font-semibold uppercase tracking-widest"
-            style={{ color: 'var(--color-text-secondary)' }}
-          >
-            Password
-          </label>
-          <input
-            {...register('password')}
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            disabled={isLoading}
-            className="w-full px-4 py-3 rounded-2xl border transition-all outline-none"
-            style={{
-              backgroundColor: 'var(--color-white)',
-              borderColor: 'var(--color-surface)',
-              borderWidth: '1.5px',
-              color: 'var(--color-text-primary)',
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-primary)';
-              e.currentTarget.style.boxShadow = '0 0 0 4px var(--color-primary-glow)';
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = 'var(--color-surface)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          />
-          {errors.password && (
-            <p className="text-xs mt-1" style={{ color: 'var(--color-danger)' }}>
-              {errors.password.message}
+          {message && (
+            <p className="text-sm font-medium" style={{ color: 'hsl(var(--success))' }}>
+              {message}
             </p>
           )}
-        </div>
 
-        {error && (
-          <p className="text-sm font-medium" style={{ color: 'var(--color-danger)' }}>
-            {error}
-          </p>
-        )}
+          <div className="-mt-1 text-right">
+            <button
+              type="button"
+              onClick={() => void handleForgotPassword()}
+              disabled={isLoading || isSendingReset}
+              className="text-xs font-medium underline"
+              style={{ color: 'var(--color-primary, hsl(var(--primary)))' }}
+            >
+              {isSendingReset ? 'Sending reset link...' : 'Forgot password?'}
+            </button>
+          </div>
 
-        {message && (
-          <p className="text-sm font-medium" style={{ color: '#16A34A' }}>
-            {message}
-          </p>
-        )}
-
-        <div className="-mt-1 text-right">
-          <button
-            type="button"
-            onClick={() => void handleForgotPassword()}
-            disabled={isLoading || isSendingReset}
-            className="text-xs font-medium underline"
-            style={{ color: 'var(--color-primary)' }}
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-12 rounded-2xl font-semibold uppercase tracking-widest"
+            style={{
+              background: 'linear-gradient(135deg, var(--color-primary, hsl(var(--primary))) 0%, var(--color-primary-dark, hsl(var(--primary-dark))) 100%)',
+              color: 'var(--color-white, hsl(var(--white)))',
+              boxShadow: '0 8px 20px var(--color-primary-glow, hsl(var(--primary-glow)))',
+            }}
           >
-            {isSendingReset ? 'Sending reset link...' : 'Forgot password?'}
-          </button>
-        </div>
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full py-3.5 rounded-2xl font-semibold uppercase tracking-widest transition-all"
-          style={{
-            background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%)',
-            color: 'var(--color-white)',
-            boxShadow: '0 8px 20px var(--color-primary-glow)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 10px 24px var(--color-primary-glow)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = '0 8px 20px var(--color-primary-glow)';
-          }}
-        >
-          {isLoading ? 'Signing in...' : 'Sign In'}
-        </button>
-      </form>
+            {isLoading ? 'Signing in...' : 'Sign In'}
+          </Button>
+        </form>
+      </Form>
 
       <div className="mt-8 text-center">
-        <p style={{ color: 'var(--color-text-secondary)' }}>
+        <p style={{ color: 'hsl(var(--text-secondary))' }}>
           Don&apos;t have an account?{' '}
           <Link
             href={gymCode ? `/gym/${encodeURIComponent(gymCode)}/signup?from=login` : '/signup'}
             className="font-semibold transition-colors"
-            style={{ color: 'var(--color-primary)' }}
+            style={{ color: 'hsl(var(--primary))' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.opacity = '0.7';
             }}

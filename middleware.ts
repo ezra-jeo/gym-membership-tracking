@@ -103,7 +103,46 @@ function withLoginOriginCookie(response: NextResponse, pathWithSearch: string): 
 }
 
 export async function middleware(request: NextRequest) {
+  const middlewareStart = performance.now()
+  const timings: string[] = []
+  const markTiming = (name: string, start: number) => {
+    timings.push(`${name};dur=${(performance.now() - start).toFixed(1)}`)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
+
+  const pathname = request.nextUrl.pathname
+  const pathWithSearch = request.nextUrl.pathname + request.nextUrl.search
+
+  const isApiRoute = pathname.startsWith("/api")
+  const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
+  const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
+  const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
+  const isAuthCallbackRoute = pathname === "/auth/callback"
+  const isAuthRoute =
+    pathname === "/login" ||
+    pathname === "/reset-password" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/signup/")
+
+  const finalize = (response: NextResponse, includeLoginOrigin = true) => {
+    const baseResponse = includeLoginOrigin ? withLoginOriginCookie(response, pathWithSearch) : response
+    const securedResponse = addSecurityHeaders(baseResponse, pathname)
+    const totalDuration = (performance.now() - middlewareStart).toFixed(1)
+    const serverTiming = [...timings, `mw;dur=${totalDuration}`].join(', ')
+    securedResponse.headers.set('Server-Timing', serverTiming)
+    return securedResponse
+  }
+
+  // API routes should return API status codes (401/403/etc.), not login redirects.
+  if (isApiRoute) {
+    return finalize(supabaseResponse, false)
+  }
+
+  // Public pages should not pay Supabase auth/profile initialization cost.
+  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute || isAuthCallbackRoute) {
+    return finalize(supabaseResponse)
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -124,36 +163,12 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const pathname = request.nextUrl.pathname
-  const pathWithSearch = request.nextUrl.pathname + request.nextUrl.search
-
-  const isApiRoute = pathname.startsWith("/api")
-  const isGymOrKioskRoute = pathname.startsWith("/kiosk") || pathname.startsWith("/gym")
-  const isMarketingRoute = pathname === "/" || pathname.startsWith("/landing")
-  const isGymSelectRoute = pathname === "/gym-select" || pathname === "/qr-login"
-  const isAuthCallbackRoute = pathname === "/auth/callback"
-  const isAuthRoute =
-    pathname === "/login" ||
-    pathname === "/reset-password" ||
-    pathname === "/signup" ||
-    pathname.startsWith("/signup/")
-
-  const finalize = (response: NextResponse) => addSecurityHeaders(withLoginOriginCookie(response, pathWithSearch), pathname)
-
-  // API routes should return API status codes (401/403/etc.), not login redirects.
-  if (isApiRoute) {
-    return addSecurityHeaders(supabaseResponse, pathname)
-  }
-
-  // Public pages should not pay auth/profile lookup cost.
-  if (isGymOrKioskRoute || isMarketingRoute || isGymSelectRoute || isAuthCallbackRoute) {
-    return finalize(supabaseResponse)
-  }
-
   if (isAuthRoute) {
     let user = null
     try {
+      const authStart = performance.now()
       const { data } = await supabase.auth.getUser()
+      markTiming('auth', authStart)
       user = data.user
     } catch (error) {
       if (isInvalidRefreshTokenError(error)) {
@@ -165,11 +180,13 @@ export async function middleware(request: NextRequest) {
 
     if (!user) return finalize(supabaseResponse)
 
+    const profileStart = performance.now()
     const { data: profile } = await supabase
       .from("profiles")
       .select("role, status, gym_id")
       .eq("id", user.id)
       .maybeSingle()
+    markTiming('profile', profileStart)
 
     if (!profile || profile.status === "rejected") {
       return finalize(supabaseResponse)
@@ -181,7 +198,9 @@ export async function middleware(request: NextRequest) {
 
   let user = null
   try {
+    const authStart = performance.now()
     const { data } = await supabase.auth.getUser()
+    markTiming('auth', authStart)
     user = data.user
   } catch (error) {
     if (isInvalidRefreshTokenError(error)) {
@@ -203,11 +222,13 @@ export async function middleware(request: NextRequest) {
 
   // Role-based access control
   // Use maybeSingle — avoids 406 if profile row doesn't exist yet
+  const profileStart = performance.now()
   const { data: profile } = await  supabase
     .from("profiles")
     .select("role, status, gym_id")
     .eq("id", user.id)
     .maybeSingle()
+  markTiming('profile', profileStart)
 
   // No profile yet (trigger delay) or rejected — send to login
   if (!profile || profile.status === "rejected") {

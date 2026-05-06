@@ -8,14 +8,13 @@ import { useAuth } from '@/lib/auth-context';
 import { createClient } from '@/lib/supabase';
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { LoadingScreen, Spinner } from '@/components/ui/loading-screen';
+import { AppShell } from '@/components/layout/app-shell';
 import {
   LayoutDashboard,
   Users,
   CreditCard,
   BarChart3,
   LogOut,
-  Menu,
-  X,
   Megaphone,
   Monitor,
   PackageOpen,
@@ -192,166 +191,85 @@ export default function AdminLayout({
   const displayName = gymName ?? 'Stren';
   const displayInitial = displayName.charAt(0).toUpperCase();
 
-  // Reusable branding block used in both desktop sidebar and mobile header
   const GymBadge = () => (
     <div className="flex items-center gap-3">
       <div
         className="h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-        style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-white)' }}
+        style={{ backgroundColor: 'hsl(var(--primary))', color: 'hsl(var(--white))' }}
       >
         {displayInitial}
       </div>
       <div className="min-w-0">
         <h1
           className="text-base font-bold leading-tight truncate"
-          style={{ color: 'var(--color-primary)', fontFamily: 'var(--font-heading)' }}
+          style={{ color: 'hsl(var(--primary-light))', fontFamily: 'var(--font-heading)' }}
         >
           {displayName}
         </h1>
-        <p className="text-xs capitalize" style={{ color: 'var(--color-gray)' }}>
+        <p className="text-xs capitalize" style={{ color: 'hsl(var(--gray))' }}>
           {profile.role} Panel
         </p>
       </div>
     </div>
   );
 
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background)' }}>
-
-      {/* Desktop Sidebar */}
-      <aside
-        className="hidden md:fixed md:left-0 md:top-0 md:h-screen md:w-64 md:border-r md:flex md:flex-col md:p-6"
-        style={{
-          backgroundColor: 'var(--color-charcoal)',
-          borderColor: 'var(--color-graphite)',
-        }}
+  const desktopFooter = (
+    <>
+      <div className="px-2 flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate" style={{ color: 'hsl(var(--light-gray))' }}>
+            {profile.email}
+          </p>
+          <p className="text-xs capitalize" style={{ color: 'hsl(var(--gray))' }}>
+            {profile.role}
+          </p>
+        </div>
+        <NotificationsPanel />
+      </div>
+      <Button
+        onClick={handleLogout}
+        disabled={isSigningOut}
+        variant="destructive"
+        className="w-full justify-start gap-3 shadow-sm"
+        style={{ backgroundColor: 'hsl(var(--destructive))', color: 'hsl(var(--destructive-foreground))' }}
       >
-        <div className="mb-8">
-          <GymBadge />
-        </div>
+        {isSigningOut ? <Spinner size={18} color="currentColor" /> : <LogOut size={20} />}
+        {isSigningOut ? 'Logging out...' : 'Logout'}
+      </Button>
+    </>
+  );
 
-        <nav className="flex-1 space-y-1">
-          {visibleNavItems.map(({ label, href, icon: Icon }) => {
-            const isActive =
-              href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                prefetch
-                className="flex items-center gap-3 px-4 py-3 rounded-md transition-colors cursor-pointer mb-1"
-                style={{
-                  backgroundColor: isActive ? 'rgba(212, 149, 106, 0.12)' : 'transparent',
-                  color: isActive ? 'var(--color-primary-light)' : 'var(--color-gray)',
-                }}
-              >
-                <Icon size={20} />
-                <span className="text-sm font-medium">{label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+  const mobileFooter = (
+    <Button
+      onClick={handleLogout}
+      disabled={isSigningOut}
+      variant="destructive"
+      className="w-full justify-start gap-3 shadow-sm"
+      style={{ backgroundColor: 'hsl(var(--destructive))', color: 'hsl(var(--destructive-foreground))' }}
+    >
+      {isSigningOut ? <Spinner size={16} color="currentColor" /> : <LogOut size={20} />}
+      {isSigningOut ? 'Logging out...' : 'Logout'}
+    </Button>
+  );
 
-        <div
-          className="space-y-4 pt-4 border-t"
-          style={{ borderColor: 'var(--color-graphite)' }}
-        >
-          <div className="px-2 flex items-center justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate" style={{ color: 'var(--color-light-gray)' }}>
-                {profile.email}
-              </p>
-              <p className="text-xs capitalize" style={{ color: 'var(--color-gray)' }}>
-                {profile.role}
-              </p>
-            </div>
-            <NotificationsPanel />
-          </div>
-          <button
-            onClick={handleLogout}
-            disabled={isSigningOut}
-            className="w-full flex items-center justify-start gap-3 px-4 py-3 rounded-md text-sm font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{
-              color: 'var(--color-danger)',
-              backgroundColor: 'rgba(224, 92, 92, 0.1)',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(224, 92, 92, 0.2)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(224, 92, 92, 0.1)'; }}
-          >
-            {isSigningOut ? <Spinner size={18} color="var(--color-danger)" /> : <LogOut size={20} />}
-            {isSigningOut ? 'Logging out...' : 'Logout'}
-          </button>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <main className="md:ml-64">
-
-        {/* Mobile header */}
-        <div
-          className="md:hidden sticky top-0 z-40 border-b p-4 flex items-center justify-between"
-          style={{
-            backgroundColor: 'var(--color-charcoal)',
-            borderColor: 'var(--color-graphite)',
-          }}
-        >
-          <GymBadge />
-          <div className="flex items-center gap-1">
-            <NotificationsPanel />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsOpen(!isOpen)}
-              style={{ color: 'var(--color-gray)' }}
-            >
-              {isOpen ? <X /> : <Menu />}
-            </Button>
-          </div>
-        </div>
-
-        {/* Mobile menu */}
-        {isOpen && (
-          <div
-            className="md:hidden border-b p-4 space-y-2"
-            style={{
-              backgroundColor: 'var(--color-charcoal)',
-              borderColor: 'var(--color-graphite)',
-            }}
-          >
-            {visibleNavItems.map(({ label, href, icon: Icon }) => (
-              <Button
-                key={href}
-                variant="ghost"
-                className="w-full justify-start gap-3"
-                style={{ color: 'var(--color-gray)' }}
-                asChild
-              >
-                <Link href={href}>
-                  <Icon size={20} />
-                  {label}
-                </Link>
-              </Button>
-            ))}
-            <Button
-              onClick={handleLogout}
-              variant="destructive"
-              disabled={isSigningOut}
-              className="w-full justify-start gap-3 mt-4"
-            >
-              {isSigningOut ? <Spinner size={16} color="currentColor" /> : <LogOut size={20} />}
-              {isSigningOut ? 'Logging out...' : 'Logout'}
-            </Button>
-          </div>
-        )}
-
-        {/* Page content */}
-        <div
-          className="p-4 md:p-8"
-          style={{ backgroundColor: 'var(--color-background)' }}
-        >
-          {children}
-        </div>
-      </main>
-    </div>
+  return (
+    <AppShell
+      desktopBrand={<GymBadge />}
+      mobileBrand={<GymBadge />}
+      navItems={visibleNavItems.map((item) => ({
+        href: item.href,
+        label: item.label,
+        icon: item.icon,
+        active: item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href),
+      }))}
+      desktopFooter={desktopFooter}
+      mobileFooter={mobileFooter}
+      mobileHeaderActions={<NotificationsPanel />}
+      mobileMenuOpen={isOpen}
+      onToggleMobileMenu={() => setIsOpen((prev) => !prev)}
+      onCloseMobileMenu={() => setIsOpen(false)}
+    >
+      {children}
+    </AppShell>
   );
 }
