@@ -179,7 +179,11 @@ export function LoginForm({ gymCode, initialOriginPath }: LoginFormProps) {
             name="email"
             render={({ field }) => (
               <FormItem className="space-y-3">
-                <FormLabel className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'hsl(var(--text-secondary))' }}>
+                <FormLabel
+                  htmlFor="email"
+                  className="text-xs font-semibold uppercase tracking-widest"
+                  style={{ color: 'hsl(var(--text-secondary))' }}
+                >
                   Email
                 </FormLabel>
                 <FormControl>
@@ -207,7 +211,11 @@ export function LoginForm({ gymCode, initialOriginPath }: LoginFormProps) {
             name="password"
             render={({ field }) => (
               <FormItem className="space-y-3">
-                <FormLabel className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'hsl(var(--text-secondary))' }}>
+                <FormLabel
+                  htmlFor="password"
+                  className="text-xs font-semibold uppercase tracking-widest"
+                  style={{ color: 'hsl(var(--text-secondary))' }}
+                >
                   Password
                 </FormLabel>
                 <FormControl>
