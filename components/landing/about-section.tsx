@@ -74,10 +74,11 @@ export function AboutSection() {
               style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.1)' }}
             >
               <Image
-                src="/YourGym.jpg"
+                src="/YourGym.webp"
                 alt="Gym owner managing their business"
                 fill
                 className="object-cover"
+                loading="lazy"
               />
               {/* Warm overlay */}
               <div 
