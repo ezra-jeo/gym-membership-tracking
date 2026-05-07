@@ -1,8 +1,13 @@
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const STATIC_CACHE = `stren-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `stren-runtime-${CACHE_VERSION}`;
 
-const APP_SHELL_URLS = ['/landing', '/login', '/manifest.webmanifest', '/stren-logo.png'];
+const APP_SHELL_URLS = [
+  '/landing',
+  '/login',
+  '/manifest.webmanifest',
+  '/stren-logo.png'
+];
 const NETWORK_ONLY_PREFIXES = ['/admin', '/member', '/kiosk', '/signup', '/api'];
 
 const STATIC_DESTINATIONS = new Set(['style', 'script', 'font', 'image']);
@@ -79,9 +84,19 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
+        const cache = await caches.open(RUNTIME_CACHE);
         try {
-          return await withTimeout(fetch(request), 4000);
+          const networkResponse = await withTimeout(fetch(request), 4000);
+          if (isCacheableResponse(networkResponse)) {
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
         } catch {
+          const cachedResponse = await cache.match(request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+
           const shellFallback = await caches.match('/landing');
           if (shellFallback) {
             return shellFallback;

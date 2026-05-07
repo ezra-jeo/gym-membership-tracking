@@ -227,6 +227,11 @@ body {
   transform: translateY(0);
 }
 
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1000px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-ken-burns { animation: none; }
   .scroll-reveal { opacity: 1; transform: none; transition: none; }

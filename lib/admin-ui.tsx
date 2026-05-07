@@ -69,7 +69,7 @@ export function PrimaryBtn({ children, onClick, disabled, type = "button", size 
   children: React.ReactNode; onClick?: () => void; disabled?: boolean; type?: "button" | "submit"; size?: "sm" | "md"
 }) {
   return (
-    <Button type={type} onClick={onClick} disabled={disabled} variant="default" size={size === "sm" ? "sm" : "default"}>
+    <Button type={type} onClick={onClick} disabled={disabled} variant="admin" size={size === "sm" ? "sm" : "default"}>
       {children}
     </Button>
   )
