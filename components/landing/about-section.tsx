@@ -16,7 +16,7 @@ export function AboutSection() {
               style={{
                 fontFamily: 'var(--font-display)',
                 fontSize: '10rem',
-                color: 'var(--color-quote-mark)',
+                color: 'hsl(var(--quote-mark-bg))',
               }}
               aria-hidden="true"
             >

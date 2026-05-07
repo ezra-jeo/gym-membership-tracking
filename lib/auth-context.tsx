@@ -14,6 +14,8 @@ const SIGN_OUT_TIMEOUT_MS = 10000
 const NAVIGATION_FAILSAFE_MS = 2000
 const PROFILE_FETCH_TIMEOUT_MS = 7000
 const PROFILE_HYDRATION_DEDUPE_MS = 2500
+const PROFILE_CACHE_TTL_MS = 2 * 60 * 1000
+const PROFILE_CACHE_KEY = "stren.auth.profileCache"
 const LOGIN_ORIGIN_STORAGE_KEY = "stren.auth.loginOriginPath"
 const PASSWORD_SETUP_DONE_PREFIX = "stren.auth.passwordSetupDone:"
 const PASSWORD_SETUP_PENDING_PREFIX = "stren.auth.passwordSetupPending:"
@@ -80,6 +82,32 @@ function computeNeedsPasswordSetup(userId: string | null): boolean {
   const pending = readLocalStorageFlag(`${PASSWORD_SETUP_PENDING_PREFIX}${userId}`)
   const done = readLocalStorageFlag(`${PASSWORD_SETUP_DONE_PREFIX}${userId}`)
   return pending && !done
+}
+
+function readProfileCache(userId: string | null): Profile | null {
+  if (!userId || typeof window === "undefined") return null
+  try {
+    const raw = window.sessionStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { userId: string; at: number; profile: Profile }
+    if (parsed.userId !== userId) return null
+    if (Date.now() - parsed.at > PROFILE_CACHE_TTL_MS) return null
+    return parsed.profile
+  } catch {
+    return null
+  }
+}
+
+function writeProfileCache(userId: string, profile: Profile) {
+  if (typeof window === "undefined") return
+  try {
+    window.sessionStorage.setItem(
+      PROFILE_CACHE_KEY,
+      JSON.stringify({ userId, at: Date.now(), profile })
+    )
+  } catch {
+    // Ignore storage failures in restricted/private environments.
+  }
 }
 
 interface AuthContextValue {
@@ -206,8 +234,7 @@ async function retryOnBenignLock<T>(operation: () => Promise<T>, retries = 1): P
   throw lastError ?? new Error("Unknown lock error")
 }
 
-// Inner component — contains all the hooks including useSearchParams.
-// Must be wrapped in <Suspense> by the parent (AuthProvider below).
+// Inner component — core auth state + bootstrap logic.
 function AuthProviderInner({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -218,7 +245,6 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
   const recentProfileHydrationRef = useRef<{ userId: string; at: number } | null>(null)
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
 
   const shouldSkipAuthBootstrap = useMemo(() => {
     if (!pathname) return false
@@ -299,19 +325,6 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, router])
 
-  useEffect(() => {
-    if (!user?.id) return
-    if (searchParams?.get("first_login") !== "1") return
-
-    markPasswordSetupPending(user.id, true)
-    setNeedsPasswordSetup(computeNeedsPasswordSetup(user.id))
-
-    const nextParams = new URLSearchParams(searchParams.toString())
-    nextParams.delete("first_login")
-    const nextQuery = nextParams.toString()
-    const targetPath = pathname ?? resolvePostAuthPath(profile?.role)
-    router.replace(nextQuery ? `${targetPath}?${nextQuery}` : targetPath)
-  }, [pathname, profile?.role, router, searchParams, user?.id])
 
   const recoverFromInvalidRefreshToken = useCallback(async (client = supabase ?? createClient()) => {
     if (isRecoveringAuthRef.current) return
@@ -370,6 +383,14 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
       setUser(currentUser)
       setNeedsPasswordSetup(computeNeedsPasswordSetup(currentUser?.id ?? null))
       if (currentUser) {
+        const cachedProfile = readProfileCache(currentUser.id)
+        if (cachedProfile) {
+          setProfile(cachedProfile)
+          setIsLoading(false)
+          // Refresh in the background to keep data fresh.
+          void fetchProfile(currentUser.id, supabase)
+          return
+        }
         const recentHydration = recentProfileHydrationRef.current
         const now = Date.now()
         if (
@@ -412,6 +433,14 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
         setNeedsPasswordSetup(computeNeedsPasswordSetup(currentUser?.id ?? null))
 
         if (currentUser) {
+          const cachedProfile = readProfileCache(currentUser.id)
+          if (cachedProfile) {
+            setProfile(cachedProfile)
+            setIsLoading(false)
+            void fetchProfile(currentUser.id, supabase)
+            return
+          }
+
           await fetchProfile(currentUser.id, supabase)
         } else {
           setProfile(null)
@@ -457,6 +486,7 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
   async function fetchProfile(userId: string, client = getClient()): Promise<Profile | null> {
     let built: Profile | null = null
     try {
+      const startedAt = typeof performance !== "undefined" ? performance.now() : null
       const { data, error } = await retryOnBenignLock(
         () => withTimeout(
           client
@@ -503,9 +533,16 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
           qrCode: profileData.qr_code ?? "",
           createdAt: profileData.created_at ?? new Date().toISOString(),
         }
+        writeProfileCache(userId, built)
         setProfile(built)
       } else {
         setProfile(null)
+      }
+      if (startedAt !== null) {
+        const elapsed = performance.now() - startedAt
+        if (elapsed > 1000) {
+          console.info(`[auth] profile fetch ${Math.round(elapsed)}ms`)
+        }
       }
     } catch {
       setProfile(null)
@@ -617,18 +654,54 @@ function AuthProviderInner({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, profile, isLoading, isSigningOut, needsPasswordSetup, signIn, signUp, signOut, completePasswordSetup, refreshProfile }}>
       {children}
+      {!shouldSkipAuthBootstrap && (
+        <Suspense fallback={null}>
+          <FirstLoginWatcher
+            userId={user?.id ?? null}
+            role={profile?.role ?? null}
+            pathname={pathname}
+            onNeedsPasswordSetup={setNeedsPasswordSetup}
+          />
+        </Suspense>
+      )}
     </AuthContext.Provider>
   )
 }
 
-// AuthProvider wraps the inner component in Suspense so that useSearchParams()
-// inside AuthProviderInner is covered by a boundary, satisfying Next.js's requirement.
+function FirstLoginWatcher({
+  userId,
+  role,
+  pathname,
+  onNeedsPasswordSetup,
+}: {
+  userId: string | null
+  role: string | null
+  pathname: string | null
+  onNeedsPasswordSetup: (needs: boolean) => void
+}) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (!userId) return
+    if (searchParams?.get("first_login") !== "1") return
+
+    markPasswordSetupPending(userId, true)
+    onNeedsPasswordSetup(computeNeedsPasswordSetup(userId))
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.delete("first_login")
+    const nextQuery = nextParams.toString()
+    const targetPath = pathname ?? resolvePostAuthPath(role)
+    router.replace(nextQuery ? `${targetPath}?${nextQuery}` : targetPath)
+  }, [onNeedsPasswordSetup, pathname, role, router, searchParams, userId])
+
+  return null
+}
+
+// AuthProvider stays mounted, but defers search-param work off public routes.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense fallback={null}>
-      <AuthProviderInner>{children}</AuthProviderInner>
-    </Suspense>
-  )
+  return <AuthProviderInner>{children}</AuthProviderInner>
 }
 
 export function useAuth() {

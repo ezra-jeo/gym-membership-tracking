@@ -46,7 +46,7 @@ self.addEventListener('activate', (event) => {
       await Promise.all(
         existingCaches
           .filter((cacheName) => !expectedCaches.includes(cacheName))
-          .map((cacheName) => caches.delete(cacheName))
+          .map((cacheName) => caches.delete(cacheName)) // Clears existing cached upon activate
       );
 
       await self.clients.claim();
